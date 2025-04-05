@@ -106,10 +106,26 @@ Pre-existing Conditions: {patient_data['pre_conditions']}
 Showing the following symptoms:
 {', '.join(symptoms)}
 
-Evaluate this and provide a list of possible diagnosis. The output format should be as follows:
+You must evaluate this case and provide a structured response in the EXACT format below.
+Follow this format precisely, with no deviations:
+
 DIAGNOSIS:
-Reasons:
-Treatment plan:"""
+1. [First most likely diagnosis]
+2. [Second most likely diagnosis] 
+3. [Third most likely diagnosis]
+... (more if needed)
+
+REASONS:
+- [Specific reason for diagnoses]
+- [Another reason]
+... (more as needed)
+
+TREATMENT PLAN:
+- [Treatment recommendation]
+- [Another recommendation]
+... (more as needed)
+
+Be concise and clinical. Do not include any text outside this structure. Do not include any additional formatting."""
 
     response = requests.post(
         f"{BASE_URL}/generate-diagnosis",
@@ -167,24 +183,29 @@ Include dosage, frequency, and duration for each medication. Format your respons
         return None
 
 def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
-    data = {
-        "doctor_id": doctor_id,
-        "patient_id": patient_id,
-        "symptoms": symptoms,
-        "diagnosis": diagnosis,
-        "prescription": prescription,
-        "date": datetime.now().isoformat()
-    }
-    
-    response = requests.post(
-        f"{BASE_URL}/save-consultation",
-        json=data
-    )
-    
-    if response.status_code == 200:
-        return True
-    else:
-        st.error("Failed to save consultation")
+    try:
+        data = {
+            "doctor_id": doctor_id,
+            "patient_id": patient_id,
+            "symptoms": symptoms,
+            "diagnosis": diagnosis,
+            "prescription": prescription,
+            "date": datetime.now().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BASE_URL}/save-consultation",
+            json=data
+        )
+        
+        if response.status_code == 200:
+            st.success("Consultation saved to database")
+            return True
+        else:
+            st.error(f"Failed to save consultation: {response.text}")
+            return False
+    except Exception as e:
+        st.error(f"Error saving consultation: {str(e)}")
         return False
 
 def create_prescription_pdf(patient_data, diagnosis, prescription):
@@ -424,23 +445,26 @@ def display_main_interface():
         diagnosis_text = st.session_state.diagnosis
         possible_diagnoses = []
         
-        # Try to find diagnoses in the text - common formats like lists with bullets, numbers, or after "DIAGNOSIS:"
+        # Extract diagnoses from the structured format
         if "DIAGNOSIS:" in diagnosis_text:
-            diagnosis_section = diagnosis_text.split("DIAGNOSIS:")[1].split("Reasons:")[0].strip()
-            possible_diagnoses = [d.strip() for d in re.split(r'[\n•\-\*]+', diagnosis_section) if d.strip()]
-        else:
-            # Look for bullet points or numbered lists
-            possible_diagnoses = [d.strip() for d in re.split(r'[\n•\-\*\d+\.]+', diagnosis_text) 
-                                 if d.strip() and len(d.strip()) < 100]  # Avoid long paragraphs
-        
-        # Filter out very short entries that might not be diagnoses
-        possible_diagnoses = [d for d in possible_diagnoses if len(d) > 5]
-        
-        # If no diagnoses found, try to split by newlines
-        if not possible_diagnoses:
-            lines = diagnosis_text.split('\n')
-            possible_diagnoses = [line.strip() for line in lines if line.strip() and len(line.strip()) < 100]
-        
+            # Get the text between "DIAGNOSIS:" and "REASONS:"
+            start_idx = diagnosis_text.find("DIAGNOSIS:") + len("DIAGNOSIS:")
+            end_idx = diagnosis_text.find("REASONS:")
+            if end_idx == -1:  # If REASONS is not found
+                end_idx = len(diagnosis_text)
+            
+            # Extract the diagnosis section
+            diagnosis_section = diagnosis_text[start_idx:end_idx].strip()
+            
+            # Parse numbered list (1. Diagnosis)
+            numbered_pattern = r'(\d+)\.?\s+(.+?)(?=\n\d+\.|\Z)'
+            matches = re.finditer(numbered_pattern, diagnosis_section, re.MULTILINE|re.DOTALL)
+            
+            for match in matches:
+                diagnosis_text = match.group(2).strip()
+                if diagnosis_text:
+                    possible_diagnoses.append(diagnosis_text)
+                    
         # Add option for "Other" if any diagnoses were found
         if possible_diagnoses:
             possible_diagnoses.append("Other (write below)")
