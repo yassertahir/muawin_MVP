@@ -361,15 +361,30 @@ def display_main_interface():
                 if st.checkbox(symptom):
                     selected_symptoms.append(symptom)
         
-        # Custom symptom
+        # Initialize a session state for temporary custom symptoms if it doesn't exist
+        if "temp_custom_symptoms" not in st.session_state:
+            st.session_state.temp_custom_symptoms = []
+            
+        # Display custom symptoms that have been added but not yet confirmed
+        if st.session_state.temp_custom_symptoms:
+            st.write("**Custom symptoms to be added:**")
+            for i, symptom in enumerate(st.session_state.temp_custom_symptoms):
+                st.write(f"- {symptom}")
+                
+        # Custom symptom input
         custom_symptom = st.text_input("Add custom symptom")
         if custom_symptom and st.button("Add Custom Symptom"):
-            selected_symptoms.append(custom_symptom)
+            st.session_state.temp_custom_symptoms.append(custom_symptom)
             st.experimental_rerun()
         
-        if selected_symptoms and st.button("Confirm Symptoms"):
-            st.session_state.symptoms = selected_symptoms
-            st.experimental_rerun()
+        # Include both selected checkboxes and custom symptoms when confirming
+        if st.button("Confirm Symptoms"):
+            all_symptoms = selected_symptoms + st.session_state.temp_custom_symptoms
+            if all_symptoms:  # Only update if there are symptoms
+                st.session_state.symptoms = all_symptoms
+                # Clear temporary custom symptoms
+                st.session_state.temp_custom_symptoms = []
+                st.experimental_rerun()
     
     elif st.session_state.symptoms and not st.session_state.diagnosis:
         # Display patient info and symptoms
@@ -526,7 +541,7 @@ Showing the following symptoms:
             header = None
             for i, line in enumerate(lines):
                 line = line.strip()
-                if line.startswith("|") and i < len(lines)-1 and "-|-" in lines[i+1]:
+                if line.startswith("|") and i < len(lines)-1 and "-|-" in line:
                     # This is the header row
                     header = [col.strip() for col in line.strip("|").split("|")]
                     break
@@ -742,6 +757,22 @@ Showing the following symptoms:
         
         with col2:
             if st.button("End Consultation"):
+                # First save the consultation data
+                if save_consultation(
+                    st.session_state.doctor_id,
+                    st.session_state.patient_id,
+                    st.session_state.symptoms,
+                    diagnosis,
+                    prescription
+                ):
+                    st.success("Consultation saved successfully")
+                else:
+                    st.error("Failed to save consultation")
+                    # Option to continue or force end
+                    if st.button("Force End Without Saving"):
+                        start_new_conversation()
+                        st.experimental_rerun()
+                # Only clear the session if save was successful
                 start_new_conversation()
                 st.experimental_rerun()
 
