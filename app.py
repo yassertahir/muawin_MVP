@@ -506,6 +506,232 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
     
     return temp_filename
 
+def create_prescription_html(patient_data, diagnosis, prescription):
+    """Generate an HTML version of the prescription with proper RTL support"""
+    import os
+    import tempfile
+    
+    st.write("Debugging: Starting HTML generation...")
+    
+    # Create a temporary file
+    temp_filename = os.path.join(tempfile.gettempdir(), "prescription.html")
+    st.write(f"Debugging: Will write to {temp_filename}")
+    
+    # Patient language and translation check
+    patient_language = patient_data.get('language', 'English')
+    needs_translation = patient_language.lower() != 'english'
+    
+    # Check if language is RTL
+    rtl_languages = ['urdu', 'arabic', 'persian', 'sindhi']
+    is_rtl = patient_language.lower() in rtl_languages
+    
+    # Function to translate text
+    def translate_text(text, target_language):
+        if not needs_translation:
+            return None
+            
+        try:
+            language_code = target_language.lower()
+            response = requests.post(
+                f"{BASE_URL}/translate",
+                json={"text": text, "target_language": language_code}
+            )
+            
+            if response.status_code == 200:
+                return response.json().get("translated_text")
+            return None
+        except Exception as e:
+            st.error(f"Translation error: {str(e)}")
+            return None
+    
+    # Function to convert newlines to <br> tags
+    def nl2br(text):
+        if text:
+            return text.replace("\n", "<br>")
+        return ""
+    
+    # Build HTML content as a single string - avoid f-strings with escapes
+    html = []
+    html.append("<!DOCTYPE html>")
+    html.append("<html>")
+    html.append("<head>")
+    html.append("    <meta charset='UTF-8'>")
+    html.append("    <title>Medical Prescription</title>")
+    html.append("    <style>")
+    html.append("        body { font-family: Arial, sans-serif; margin: 20px; }")
+    html.append("        .rtl { direction: rtl; text-align: right; }")
+    html.append("        .ltr { direction: ltr; text-align: left; }")
+    html.append("        .translation { color: #555; font-style: italic; margin: 5px 0 15px 0; }")
+    html.append("        h1 { text-align: center; }")
+    html.append("        .section { margin-top: 20px; }")
+    html.append("        .header { font-weight: bold; margin-top: 15px; }")
+    html.append("        .content { margin-left: 20px; }")
+    html.append("        @media print {")
+    html.append("            .no-print { display: none; }")
+    html.append("            body { margin: 1cm; }")
+    html.append("        }")
+    html.append("    </style>")
+    html.append("</head>")
+    html.append("<body>")
+    html.append("    <h1>Medical Prescription</h1>")
+    
+    # Header translation
+    if needs_translation:
+        header_translation = translate_text("Medical Prescription", patient_language)
+        if header_translation:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"    <div class='translation {direction_class}'>{header_translation}</div>")
+    
+    # Patient information
+    html.append("    <div class='section'>")
+    html.append(f"        <div><strong>Patient:</strong> {patient_data.get('name', 'N/A')}</div>")
+    
+    # Patient translation
+    if needs_translation:
+        patient_label = translate_text("Patient", patient_language)
+        if patient_label:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"        <div class='translation {direction_class}'>{patient_label}: {patient_data.get('name', 'N/A')}</div>")
+    
+    # Age information
+    html.append(f"        <div><strong>Age:</strong> {patient_data.get('age', 'N/A')}</div>")
+    if needs_translation:
+        age_label = translate_text("Age", patient_language)
+        if age_label:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"        <div class='translation {direction_class}'>{age_label}: {patient_data.get('age', 'N/A')}</div>")
+    
+    # Gender information
+    html.append(f"        <div><strong>Gender:</strong> {patient_data.get('gender', 'N/A')}</div>")
+    if needs_translation:
+        gender_label = translate_text("Gender", patient_language)
+        gender_value = translate_text(patient_data.get('gender', 'N/A'), patient_language)
+        if gender_label and gender_value:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"        <div class='translation {direction_class}'>{gender_label}: {gender_value}</div>")
+    
+    # Date information
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    html.append(f"        <div><strong>Date:</strong> {current_date}</div>")
+    if needs_translation:
+        date_label = translate_text("Date", patient_language)
+        if date_label:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"        <div class='translation {direction_class}'>{date_label}: {current_date}</div>")
+    
+    html.append("    </div>")
+    
+    # Diagnosis section
+    html.append("    <div class='section'>")
+    html.append("        <div class='header'>Diagnosis:</div>")
+    if needs_translation:
+        diagnosis_label = translate_text("Diagnosis", patient_language)
+        if diagnosis_label:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"        <div class='translation {direction_class}'>{diagnosis_label}</div>")
+    
+    # Format diagnosis with line breaks
+    html.append(f"        <div class='content'>{nl2br(diagnosis)}</div>")
+    if needs_translation:
+        diagnosis_translation = translate_text(diagnosis, patient_language)
+        if diagnosis_translation:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"        <div class='translation content {direction_class}'>{nl2br(diagnosis_translation)}</div>")
+    
+    html.append("    </div>")
+    
+    # Prescription section
+    html.append("    <div class='section'>")
+    html.append("        <div class='header'>Prescription:</div>")
+    if needs_translation:
+        prescription_label = translate_text("Prescription", patient_language)
+        if prescription_label:
+            direction_class = "rtl" if is_rtl else "ltr"
+            html.append(f"        <div class='translation {direction_class}'>{prescription_label}</div>")
+    
+    # Parse prescription
+    if "PRESCRIPTION:" in prescription and "• " in prescription:
+        medications = []
+        additional_instructions = ""
+        
+        lines = prescription.split("\n")
+        reading_meds = False
+        reading_instructions = False
+        
+        for line in lines:
+            if "PRESCRIPTION:" in line:
+                reading_meds = True
+                continue
+                
+            if "ADDITIONAL INSTRUCTIONS:" in line:
+                reading_meds = False
+                reading_instructions = True
+                continue
+                
+            if reading_meds and line.strip() and line.strip().startswith("• "):
+                medications.append(line.strip())
+                
+            if reading_instructions and line.strip():
+                additional_instructions += line + "\n"
+        
+        # Add medications with translations
+        html.append("        <div class='content'>")
+        for med in medications:
+            html.append(f"            <div>{med}</div>")
+            if needs_translation:
+                med_translation = translate_text(med, patient_language)
+                if med_translation:
+                    direction_class = "rtl" if is_rtl else "ltr"
+                    html.append(f"            <div class='translation {direction_class}'>{med_translation}</div>")
+        html.append("        </div>")
+        
+        # Add additional instructions
+        if additional_instructions.strip():
+            html.append("        <div class='header'>Additional Instructions:</div>")
+            if needs_translation:
+                instr_label = translate_text("Additional Instructions", patient_language)
+                if instr_label:
+                    direction_class = "rtl" if is_rtl else "ltr"
+                    html.append(f"        <div class='translation {direction_class}'>{instr_label}</div>")
+            
+            html.append(f"        <div class='content'>{nl2br(additional_instructions)}</div>")
+            if needs_translation:
+                instr_translation = translate_text(additional_instructions, patient_language)
+                if instr_translation:
+                    direction_class = "rtl" if is_rtl else "ltr"
+                    html.append(f"        <div class='translation content {direction_class}'>{nl2br(instr_translation)}</div>")
+    else:
+        # Raw prescription text
+        html.append(f"        <div class='content'>{nl2br(prescription)}</div>")
+        if needs_translation:
+            prescription_translation = translate_text(prescription, patient_language)
+            if prescription_translation:
+                direction_class = "rtl" if is_rtl else "ltr"
+                html.append(f"        <div class='translation content {direction_class}'>{nl2br(prescription_translation)}</div>")
+    
+    html.append("    </div>")
+    
+    # Print button
+    html.append("    <div class='no-print' style='margin-top: 30px; text-align: center;'>")
+    html.append("        <button onclick='window.print()'>Print Prescription</button>")
+    html.append("    </div>")
+    
+    # Close HTML
+    html.append("</body>")
+    html.append("</html>")
+    
+    # Write to file
+    try:
+    # Write to file
+        with open(temp_filename, "w", encoding="utf-8") as f:
+            f.write("\n".join(html))
+        
+        st.write(f"Debugging: HTML file written successfully to {temp_filename}")
+        return temp_filename
+    except Exception as e:
+        st.error(f"Error generating HTML: {str(e)}")
+        return None
+
 def get_pdf_display_link(pdf_path):
     """Generate HTML to display a PDF in an iframe"""
     with open(pdf_path, "rb") as f:
@@ -966,7 +1192,7 @@ Showing the following symptoms:
                     st.session_state.pdf_path = pdf_path
                     
                     # Set modal state to open
-                    st.session_state.modal_pdf_preview = True
+                    # st.session_state.modal_pdf_preview = True
                     
                     # Create download button
                     with open(pdf_path, "rb") as pdf_file:
@@ -979,10 +1205,30 @@ Showing the following symptoms:
                         mime="application/pdf"
                     )
                     
+                    # Add HTML option for better translation display
+                    html_path = create_prescription_html(patient_data, diagnosis, prescription)
+                    if html_path:
+                        with open(html_path, "rb") as html_file:
+                            html_bytes = html_file.read()
+                            
+                        st.download_button(
+                            label="Download HTML (Better for translations)",
+                            data=html_bytes,
+                            file_name=f"prescription_{patient_data['name'].replace(' ', '_')}.html",
+                            mime="text/html"
+                        )
+                        
+                        # Show HTML preview
+                        st.markdown("### HTML Version (Better for translations)")
+                        st.markdown("Click the button below to view in a new tab:")
+                        html_url = f"file://{html_path}"
+                        st.markdown(f"<a href='{html_url}' target='_blank'>Open HTML Version</a>", unsafe_allow_html=True)
+                    
                     if save_consultation(
                         st.session_state.doctor_id,
                         st.session_state.patient_id,
-                        ", ".join(st.session_state.symptoms) if isinstance(st.session_state.symptoms, list) else st.session_state.symptoms,
+                        st.session_state.symptoms if isinstance(st.session_state.symptoms, list) else
+                            [s.strip() for s in st.session_state.symptoms.split(',')],  # Ensure it's a list
                         diagnosis,
                         prescription
                     ):
@@ -991,10 +1237,16 @@ Showing the following symptoms:
         with col2:
             if st.button("End Consultation"):
                 # First save the consultation data
+                # PROBLEM: The symptoms are being passed as a string, but API expects a list
+                symptoms_list = st.session_state.symptoms
+                if isinstance(symptoms_list, str):
+                    # Convert comma-separated string to list if needed
+                    symptoms_list = [s.strip() for s in symptoms_list.split(',')]
+                    
                 if save_consultation(
                     st.session_state.doctor_id,
                     st.session_state.patient_id,
-                    st.session_state.symptoms,
+                    symptoms_list,  # Pass as a list
                     diagnosis,
                     prescription
                 ):
@@ -1010,16 +1262,16 @@ Showing the following symptoms:
                 st.experimental_rerun()
     
     # Show modal if triggered
-    if st.session_state.modal_pdf_preview and hasattr(st.session_state, 'pdf_path'):
-        modal = Modal("PDF Preview", key="pdf_preview_modal")
-        with modal.container():
-            st.markdown("### Prescription Preview")
-            pdf_display = get_pdf_display_link(st.session_state.pdf_path)
-            st.markdown(pdf_display, unsafe_allow_html=True)
+    # if st.session_state.modal_pdf_preview and hasattr(st.session_state, 'pdf_path'):
+    #     modal = Modal("PDF Preview", key="pdf_preview_modal")
+    #     with modal.container():
+    #         st.markdown("### Prescription Preview")
+    #         pdf_display = get_pdf_display_link(st.session_state.pdf_path)
+    #         st.markdown(pdf_display, unsafe_allow_html=True)
             
-            if st.button("Close Preview"):
-                st.session_state.modal_pdf_preview = False
-                st.experimental_rerun()
+    #         if st.button("Close Preview"):
+    #             st.session_state.modal_pdf_preview = False
+    #             st.experimental_rerun()
 
 # Main app logic
 if st.session_state.authenticated:
