@@ -506,6 +506,11 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
     
     return temp_filename
 
+def create_prescription_pdf_legacy(patient_data, diagnosis, prescription):
+    """Legacy PDF generation function used as fallback when HTML-to-PDF fails"""
+    st.write("Using legacy PDF generation method...")
+    return create_prescription_pdf(patient_data, diagnosis, prescription)
+
 def create_prescription_html(patient_data, diagnosis, prescription):
     """Generate an HTML version of the prescription with proper RTL support"""
     import os
@@ -731,6 +736,61 @@ def create_prescription_html(patient_data, diagnosis, prescription):
     except Exception as e:
         st.error(f"Error generating HTML: {str(e)}")
         return None
+
+def create_prescription(patient_data, diagnosis, prescription):
+    """Generate both HTML and PDF prescriptions using the HTML-first approach"""
+    import os
+    import tempfile
+    import subprocess
+    
+    st.write("Generating prescription documents...")
+    
+    # First create the HTML version which handles translations properly
+    html_path = create_prescription_html(patient_data, diagnosis, prescription)
+    
+    if not html_path:
+        st.error("Failed to generate HTML prescription")
+        return None, None
+    
+    # Now convert HTML to PDF using wkhtmltopdf (much better RTL support than ReportLab)
+    pdf_path = os.path.join(tempfile.gettempdir(), "prescription.pdf")
+    
+    try:
+        # Check if wkhtmltopdf is installed
+        result = subprocess.run(['which', 'wkhtmltopdf'], capture_output=True, text=True)
+        wkhtmltopdf_path = result.stdout.strip()
+        
+        if not wkhtmltopdf_path:
+            st.warning("wkhtmltopdf not found. Installing it would improve PDF generation with RTL languages.")
+            # Fall back to ReportLab method
+            return create_prescription_pdf_legacy(patient_data, diagnosis, prescription), html_path
+        
+        # Convert HTML to PDF using wkhtmltopdf
+        cmd = [
+            wkhtmltopdf_path,
+            '--encoding', 'UTF-8',
+            '--margin-top', '20',
+            '--margin-right', '20',
+            '--margin-bottom', '20',
+            '--margin-left', '20',
+            html_path,
+            pdf_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            st.success("PDF generated successfully from HTML")
+            return pdf_path, html_path
+        else:
+            st.warning(f"HTML to PDF conversion failed: {result.stderr}")
+            # Fall back to ReportLab method
+            return create_prescription_pdf_legacy(patient_data, diagnosis, prescription), html_path
+            
+    except Exception as e:
+        st.error(f"Error converting HTML to PDF: {str(e)}")
+        # Fall back to ReportLab method
+        return create_prescription_pdf_legacy(patient_data, diagnosis, prescription), html_path
 
 def get_pdf_display_link(pdf_path):
     """Generate HTML to display a PDF in an iframe"""
@@ -1185,16 +1245,12 @@ Showing the following symptoms:
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("Generate PDF"):
-                pdf_path = create_prescription_pdf(patient_data, diagnosis, prescription)
+            if st.button("Generate Prescription"):
+                # Use the new unified function that generates both formats
+                pdf_path, html_path = create_prescription(patient_data, diagnosis, prescription)
+                
                 if pdf_path:
-                    # Save the PDF path in session state
-                    st.session_state.pdf_path = pdf_path
-                    
-                    # Set modal state to open
-                    # st.session_state.modal_pdf_preview = True
-                    
-                    # Create download button
+                    # Create download button for PDF
                     with open(pdf_path, "rb") as pdf_file:
                         PDFbyte = pdf_file.read()
                         
@@ -1204,35 +1260,28 @@ Showing the following symptoms:
                         file_name=f"prescription_{patient_data['name'].replace(' ', '_')}.pdf",
                         mime="application/pdf"
                     )
-                    
-                    # Add HTML option for better translation display
-                    html_path = create_prescription_html(patient_data, diagnosis, prescription)
-                    if html_path:
-                        with open(html_path, "rb") as html_file:
-                            html_bytes = html_file.read()
-                            
-                        st.download_button(
-                            label="Download HTML (Better for translations)",
-                            data=html_bytes,
-                            file_name=f"prescription_{patient_data['name'].replace(' ', '_')}.html",
-                            mime="text/html"
-                        )
+                
+                if html_path:
+                    # Create download button for HTML (as backup option)
+                    with open(html_path, "rb") as html_file:
+                        html_bytes = html_file.read()
                         
-                        # Show HTML preview
-                        st.markdown("### HTML Version (Better for translations)")
-                        st.markdown("Click the button below to view in a new tab:")
-                        html_url = f"file://{html_path}"
-                        st.markdown(f"<a href='{html_url}' target='_blank'>Open HTML Version</a>", unsafe_allow_html=True)
+                    st.download_button(
+                        label="Download HTML Version",
+                        data=html_bytes,
+                        file_name=f"prescription_{patient_data['name'].replace(' ', '_')}.html",
+                        mime="text/html"
+                    )
                     
-                    if save_consultation(
-                        st.session_state.doctor_id,
-                        st.session_state.patient_id,
-                        st.session_state.symptoms if isinstance(st.session_state.symptoms, list) else
-                            [s.strip() for s in st.session_state.symptoms.split(',')],  # Ensure it's a list
-                        diagnosis,
-                        prescription
-                    ):
-                        st.success("Consultation saved to database")
+                if pdf_path and save_consultation(
+                    st.session_state.doctor_id,
+                    st.session_state.patient_id,
+                    st.session_state.symptoms if isinstance(st.session_state.symptoms, list) else
+                        [s.strip() for s in st.session_state.symptoms.split(',')],
+                    diagnosis,
+                    prescription
+                ):
+                    st.success("Consultation saved to database")
         
         with col2:
             if st.button("End Consultation"):
