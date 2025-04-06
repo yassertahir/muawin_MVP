@@ -7,6 +7,13 @@ import os
 import tempfile
 from fpdf import FPDF
 import base64
+from streamlit_modal import Modal
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # Configure the page
 st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
@@ -28,7 +35,9 @@ if "prescription" not in st.session_state:
     st.session_state.prescription = None
 if "final_prescription" not in st.session_state:
     st.session_state.final_prescription = False
-    
+if "modal_pdf_preview" not in st.session_state:
+    st.session_state.modal_pdf_preview = False
+
 # Base URL for API
 BASE_URL = "http://localhost:8000"
 
@@ -209,75 +218,198 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
         return False
 
 def create_prescription_pdf(patient_data, diagnosis, prescription):
-    from fpdf import FPDF
     import tempfile
     import os
-    import re
+    import requests
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
     
     # Create a temporary file
     temp_filename = os.path.join(tempfile.gettempdir(), "prescription.pdf")
     
-    # Create PDF
-    class PDF(FPDF):
-        def __init__(self):
-            super().__init__()
-            self.add_page()
-            self.set_auto_page_break(auto=True, margin=15)
+    # Patient language and translation check
+    patient_language = patient_data.get('language', 'English')
+    needs_translation = patient_language.lower() != 'english'
     
-    pdf = PDF()
-    pdf.set_font('Arial', '', 12)
+    # Register fonts with Unicode support - need to have these font files available
+    try:
+        # Try to register fonts for non-Latin scripts
+        font_paths = {
+            'urdu': '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf',
+            'arabic': '/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf',
+            'punjabi': '/usr/share/fonts/truetype/noto/NotoSansGurmukhi-Regular.ttf',
+            'sindhi': '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf',  # Uses Urdu script
+            'default': '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+        }
+        
+        # Try alternative paths if the above don't work
+        alt_font_paths = {
+            'urdu': '/usr/share/fonts/truetype/noto/NotoSansUrdu-Regular.ttf',
+            'arabic': '/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf',
+            'punjabi': '/usr/share/fonts/truetype/noto/NotoSansPunjabi-Regular.ttf',
+            'sindhi': '/usr/share/fonts/truetype/noto/NotoSansUrdu-Regular.ttf',
+            'default': '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+        }
+        
+        # Get the appropriate font path based on language
+        font_key = patient_language.lower()
+        font_path = font_paths.get(font_key, font_paths['default'])
+        
+        # Try alternative path if first one fails
+        if not os.path.exists(font_path):
+            font_path = alt_font_paths.get(font_key, alt_font_paths['default'])
+            
+        # If that still fails, use DejaVu as fallback
+        if not os.path.exists(font_path):
+            font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+            
+        # Register the font if it exists
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('TranslationFont', font_path))
+            st.success(f"Registered font for {patient_language}")
+            
+            # Create a style for translations with the appropriate font
+            translation_style = ParagraphStyle(
+                name='Translation',
+                parent=getSampleStyleSheet()['Normal'],
+                fontName='TranslationFont',
+                textColor=(0.4, 0.4, 0.4),
+                fontSize=10
+            )
+        else:
+            st.warning(f"Could not find appropriate font for {patient_language}")
+            translation_style = ParagraphStyle(
+                name='Translation',
+                parent=getSampleStyleSheet()['Normal'],
+                textColor=(0.4, 0.4, 0.4),
+                fontName='Helvetica-Oblique'
+            )
+    except Exception as e:
+        st.warning(f"Error registering font: {str(e)}")
+        translation_style = ParagraphStyle(
+            name='Translation',
+            parent=getSampleStyleSheet()['Normal'],
+            textColor=(0.4, 0.4, 0.4),
+            fontName='Helvetica-Oblique'
+        )
+    
+    # Function to translate text
+    def translate_text(text, target_language):
+        if not needs_translation:
+            return None
+            
+        try:
+            language_code = target_language.lower()
+            response = requests.post(
+                f"{BASE_URL}/translate",
+                json={"text": text, "target_language": language_code}
+            )
+            
+            if response.status_code == 200:
+                translated = response.json().get("translated_text")
+                return translated
+            return None
+        except Exception as e:
+            st.error(f"Translation error: {str(e)}")
+            return None
+    
+    # Set up the document
+    doc = SimpleDocTemplate(
+        temp_filename,
+        pagesize=letter,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72
+    )
+    
+    # Styles
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name='Center',
+        parent=styles['Heading2'],
+        alignment=TA_CENTER
+    ))
+    
+    # Add our translation style to styles
+    styles.add(translation_style)
+    
+    # Story (contents)
+    story = []
     
     # Add header
-    pdf.set_font('Arial', 'B', 16)
-    pdf.cell(0, 10, "Medical Prescription", 0, 1, 'C')
-    pdf.ln(5)
+    story.append(Paragraph("Medical Prescription", styles['Center']))
     
-    # Add patient information
-    pdf.set_font('Arial', '', 12)
-    pdf.cell(0, 8, f"Patient: {patient_data.get('name', 'N/A')}", 0, 1)
-    pdf.cell(0, 8, f"Age: {patient_data.get('age', 'N/A')}", 0, 1)
-    pdf.cell(0, 8, f"Gender: {patient_data.get('gender', 'N/A')}", 0, 1)
-    pdf.cell(0, 8, f"Date: {patient_data.get('date', 'N/A')}", 0, 1)
-    pdf.ln(5)
+    # Add translation for header
+    if needs_translation:
+        header_translation = translate_text("Medical Prescription", patient_language)
+        if header_translation:
+            story.append(Paragraph(f"({header_translation})", styles['Translation']))
     
-    # Add diagnosis
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, "Diagnosis:", 0, 1)
-    pdf.set_font('Arial', '', 12)
+    story.append(Spacer(1, 12))
     
-    # Clean text by replacing Unicode characters
-    def clean_text(text):
-        # Replace Unicode bullet points, em dashes, etc. with ASCII equivalents
-        text = text.replace('\u2022', '-')  # Bullet point to hyphen
-        text = text.replace('\u2013', '-')  # En dash to hyphen
-        text = text.replace('\u2014', '-')  # Em dash to hyphen
-        text = text.replace('\u2018', "'")  # Left single quote
-        text = text.replace('\u2019', "'")  # Right single quote
-        text = text.replace('\u201c', '"')  # Left double quote
-        text = text.replace('\u201d', '"')  # Right double quote
-        text = text.replace('\u2026', '...')  # Ellipsis
-        # Try to handle any other non-Latin1 characters
-        return re.sub(r'[^\x00-\xff]', '?', text)
+    # Patient information
+    story.append(Paragraph(f"<b>Patient:</b> {patient_data.get('name', 'N/A')}", styles['Normal']))
+    if needs_translation:
+        patient_label = translate_text("Patient", patient_language)
+        if patient_label:
+            story.append(Paragraph(f"({patient_label}: {patient_data.get('name', 'N/A')})", styles['Translation']))
     
-    # Clean and add diagnosis with multiline support
-    clean_diagnosis = clean_text(diagnosis)
-    pdf.multi_cell(0, 8, clean_diagnosis)
-    pdf.ln(5)
+    story.append(Paragraph(f"<b>Age:</b> {patient_data.get('age', 'N/A')}", styles['Normal']))
+    if needs_translation:
+        age_translation = translate_text("Age", patient_language)
+        if age_translation:
+            story.append(Paragraph(f"({age_translation}: {patient_data.get('age', 'N/A')})", styles['Translation']))
     
-    # Add prescription
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, "Prescription:", 0, 1)
-    pdf.set_font('Arial', '', 12)
+    story.append(Paragraph(f"<b>Gender:</b> {patient_data.get('gender', 'N/A')}", styles['Normal']))
+    if needs_translation:
+        gender_label = translate_text("Gender", patient_language)
+        gender_value = translate_text(patient_data.get('gender', 'N/A'), patient_language)
+        if gender_label and gender_value:
+            story.append(Paragraph(f"({gender_label}: {gender_value})", styles['Translation']))
     
-    # Parse the prescription to determine if it's in table format
+    story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%Y-%m-%d')}", styles['Normal']))
+    if needs_translation:
+        date_label = translate_text("Date", patient_language)
+        if date_label:
+            story.append(Paragraph(f"({date_label}: {datetime.now().strftime('%Y-%m-%d')})", styles['Translation']))
+    
+    story.append(Spacer(1, 12))
+    
+    # Diagnosis
+    story.append(Paragraph("<b>Diagnosis:</b>", styles['Heading3']))
+    if needs_translation:
+        diagnosis_label = translate_text("Diagnosis", patient_language)
+        if diagnosis_label:
+            story.append(Paragraph(f"({diagnosis_label})", styles['Translation']))
+    
+    story.append(Paragraph(diagnosis.replace('\n', '<br/>'), styles['Normal']))
+    if needs_translation:
+        diagnosis_translation = translate_text(diagnosis, patient_language)
+        if diagnosis_translation:
+            story.append(Paragraph(diagnosis_translation.replace('\n', '<br/>'), styles['Translation']))
+    
+    story.append(Spacer(1, 12))
+    
+    # Prescription
+    story.append(Paragraph("<b>Prescription:</b>", styles['Heading3']))
+    if needs_translation:
+        prescription_label = translate_text("Prescription", patient_language)
+        if prescription_label:
+            story.append(Paragraph(f"({prescription_label})", styles['Translation']))
+    
     if "PRESCRIPTION:" in prescription and "• " in prescription:
-        # It's likely the formatted prescription from our table
-        # Extract medication details
+        # Parse structured prescription
         medications = []
+        additional_instructions = ""
+        
         lines = prescription.split('\n')
         reading_meds = False
         reading_instructions = False
-        additional_instructions = ""
         
         for line in lines:
             if "PRESCRIPTION:" in line:
@@ -295,27 +427,94 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
             if reading_instructions and line.strip():
                 additional_instructions += line + "\n"
         
-        # Add medications as a formatted list
+        # Add medications
         for med in medications:
-            cleaned_med = clean_text(med)
-            pdf.cell(0, 8, cleaned_med, 0, 1)
+            story.append(Paragraph(med.replace("• ", "&#8226; "), styles['Normal']))
+            if needs_translation:
+                med_translation = translate_text(med, patient_language)
+                if med_translation:
+                    story.append(Paragraph(med_translation.replace("• ", "&#8226; "), styles['Translation']))
         
-        # Add additional instructions if any
+        # Add additional instructions
         if additional_instructions.strip():
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("<b>Additional Instructions:</b>", styles['Heading3']))
+            if needs_translation:
+                instr_label = translate_text("Additional Instructions", patient_language)
+                if instr_label:
+                    story.append(Paragraph(f"({instr_label})", styles['Translation']))
+            
+            story.append(Paragraph(additional_instructions.replace('\n', '<br/>'), styles['Normal']))
+            if needs_translation:
+                instr_translation = translate_text(additional_instructions, patient_language)
+                if instr_translation:
+                    story.append(Paragraph(instr_translation.replace('\n', '<br/>'), styles['Translation']))
+    else:
+        # Raw prescription text
+        story.append(Paragraph(prescription.replace('\n', '<br/>'), styles['Normal']))
+        if needs_translation:
+            prescription_translation = translate_text(prescription, patient_language)
+            if prescription_translation:
+                story.append(Paragraph(prescription_translation.replace('\n', '<br/>'), styles['Translation']))
+    
+    story.append(Spacer(1, 24))
+    
+    # Language notice
+    if needs_translation:
+        notice = f"This prescription includes English and {patient_language} text."
+    else:
+        notice = "This prescription is in English only."
+        
+    story.append(Paragraph(notice, styles['Italic']))
+    
+    # Build the PDF document
+    try:
+        doc.build(story)
+        st.success("PDF generated successfully")
+    except Exception as e:
+        st.error(f"PDF generation error: {str(e)}")
+        # Fallback to simple PDF without translations
+        try:
+            from fpdf import FPDF
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font('Arial', '', 12)
+            
+            pdf.cell(0, 10, "Medical Prescription", 0, 1, 'C')
+            pdf.cell(0, 8, f"Patient: {patient_data.get('name', 'N/A')}", 0, 1)
+            pdf.cell(0, 8, f"Age: {patient_data.get('age', 'N/A')}", 0, 1)
+            pdf.cell(0, 8, f"Gender: {patient_data.get('gender', 'N/A')}", 0, 1)
+            pdf.cell(0, 8, f"Date: {datetime.now().strftime('%Y-%m-%d')}", 0, 1)
+            
             pdf.ln(5)
             pdf.set_font('Arial', 'B', 14)
-            pdf.cell(0, 10, "Additional Instructions:", 0, 1)
+            pdf.cell(0, 10, "Diagnosis:", 0, 1)
             pdf.set_font('Arial', '', 12)
-            pdf.multi_cell(0, 8, clean_text(additional_instructions))
-    else:
-        # Just use the raw prescription text
-        clean_prescription = clean_text(prescription)
-        pdf.multi_cell(0, 8, clean_prescription)
-    
-    # Output the PDF
-    pdf.output(temp_filename)
+            pdf.multi_cell(0, 8, diagnosis.encode('ascii', 'replace').decode('ascii'))
+            
+            pdf.ln(5)
+            pdf.set_font('Arial', 'B', 14)
+            pdf.cell(0, 10, "Prescription:", 0, 1)
+            pdf.set_font('Arial', '', 12)
+            pdf.multi_cell(0, 8, prescription.encode('ascii', 'replace').decode('ascii'))
+            
+            pdf.output(temp_filename)
+            st.warning("Generated PDF with limited character support (no translations).")
+        except Exception as e2:
+            st.error(f"PDF generation failed completely: {str(e2)}")
+            return None
     
     return temp_filename
+
+def get_pdf_display_link(pdf_path):
+    """Generate HTML to display a PDF in an iframe"""
+    with open(pdf_path, "rb") as f:
+        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+    
+    pdf_display = f"""
+        <iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>
+    """
+    return pdf_display
 
 def display_login():
     st.title("Muawin - AI Assistant for Doctors")
@@ -363,6 +562,7 @@ def display_main_interface():
             st.write(f"**Name:** {patient_data['name']}")
             st.write(f"**Age:** {patient_data['age']}")
             st.write(f"**Gender:** {patient_data['gender']}")
+            st.write(f"**Language:** {patient_data.get('language', 'English')}")
         
         with col2:
             st.subheader("Vital Signs")
@@ -595,7 +795,7 @@ Showing the following symptoms:
                 cleaned_line = re.sub(r'^[\s•\-\*\d\.]+', '', line).strip()
                 
                 # Skip very short lines or headers
-                if len(cleaned_line) < 5 or ":" in cleaned_line[:15]:
+                if len(cleaned_line < 5 or ":" in cleaned_line[:15]):
                     continue
                     
                 # Try to extract medication components
@@ -761,23 +961,32 @@ Showing the following symptoms:
         with col1:
             if st.button("Generate PDF"):
                 pdf_path = create_prescription_pdf(patient_data, diagnosis, prescription)
-                
-                # Create download button for PDF
-                with open(pdf_path, "rb") as f:
-                    pdf_bytes = f.read()
-                    b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+                if pdf_path:
+                    # Save the PDF path in session state
+                    st.session_state.pdf_path = pdf_path
                     
-                href = f'<a href="data:application/pdf;base64,{b64_pdf}" download="prescription.pdf">Download Prescription PDF</a>'
-                st.markdown(href, unsafe_allow_html=True)
-                
-                # Save consultation to database
-                save_consultation(
-                    st.session_state.doctor_id,
-                    st.session_state.patient_id,
-                    st.session_state.symptoms,
-                    diagnosis,
-                    prescription
-                )
+                    # Set modal state to open
+                    st.session_state.modal_pdf_preview = True
+                    
+                    # Create download button
+                    with open(pdf_path, "rb") as pdf_file:
+                        PDFbyte = pdf_file.read()
+                        
+                    st.download_button(
+                        label="Download PDF",
+                        data=PDFbyte,
+                        file_name=f"prescription_{patient_data['name'].replace(' ', '_')}.pdf",
+                        mime="application/pdf"
+                    )
+                    
+                    if save_consultation(
+                        st.session_state.doctor_id,
+                        st.session_state.patient_id,
+                        ", ".join(st.session_state.symptoms) if isinstance(st.session_state.symptoms, list) else st.session_state.symptoms,
+                        diagnosis,
+                        prescription
+                    ):
+                        st.success("Consultation saved to database")
         
         with col2:
             if st.button("End Consultation"):
@@ -798,6 +1007,18 @@ Showing the following symptoms:
                         st.experimental_rerun()
                 # Only clear the session if save was successful
                 start_new_conversation()
+                st.experimental_rerun()
+    
+    # Show modal if triggered
+    if st.session_state.modal_pdf_preview and hasattr(st.session_state, 'pdf_path'):
+        modal = Modal("PDF Preview", key="pdf_preview_modal")
+        with modal.container():
+            st.markdown("### Prescription Preview")
+            pdf_display = get_pdf_display_link(st.session_state.pdf_path)
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            
+            if st.button("Close Preview"):
+                st.session_state.modal_pdf_preview = False
                 st.experimental_rerun()
 
 # Main app logic

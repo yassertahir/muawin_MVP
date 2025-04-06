@@ -12,6 +12,7 @@ from langchain.prompts import PromptTemplate
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
+from googletrans import Translator
 
 load_dotenv()
 
@@ -72,6 +73,10 @@ class ConsultationRequest(BaseModel):
     diagnosis: str
     prescription: str
     date: str
+
+class TranslationRequest(BaseModel):
+    text: str
+    target_language: str
 
 # Helper function to create prescription PDF
 def create_prescription_pdf(patient_data, diagnosis, prescription):
@@ -151,8 +156,6 @@ def login(request: LoginRequest):
 
 @app.get("/patient/{patient_id}")
 def get_patient(patient_id: str):
-    # In a real application, this would fetch from the database
-    # For demo, we'll simulate retrieving data
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -171,18 +174,19 @@ def get_patient(patient_id: str):
             "gender": result["gender"],
             "temperature": result["temperature"],
             "blood_pressure": result["blood_pressure"],
-            "pre_conditions": result["pre_conditions"]
+            "pre_conditions": result["pre_conditions"],
+            "language": result["language"]  # Added language field
         }
     
     # If not found in DB, return simulated data
-    # In a real app, you'd raise a 404 error
     return {
         "name": f"Patient {patient_id}",
         "age": 35,
         "gender": "Male",
         "temperature": "37.2°C",
         "blood_pressure": "120/80",
-        "pre_conditions": "None"
+        "pre_conditions": "None",
+        "language": "English"  # Default language
     }
 
 @app.post("/generate-diagnosis")
@@ -254,6 +258,15 @@ def save_consultation(request: ConsultationRequest):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+@app.post("/translate")
+def translate_text(request: TranslationRequest):
+    try:
+        translator = Translator()
+        translated = translator.translate(request.text, dest=request.target_language.lower())
+        return {"translated_text": translated.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Translation error: {str(e)}")
 
 # Run server with: uvicorn api:app --reload
 if __name__ == "__main__":
