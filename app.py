@@ -37,6 +37,14 @@ if "final_prescription" not in st.session_state:
     st.session_state.final_prescription = False
 if "modal_pdf_preview" not in st.session_state:
     st.session_state.modal_pdf_preview = False
+if "modal_pdf_view" not in st.session_state:
+    st.session_state.modal_pdf_view = False
+if "modal_html_view" not in st.session_state:
+    st.session_state.modal_html_view = False
+if "view_pdf_path" not in st.session_state:
+    st.session_state.view_pdf_path = None
+if "view_html_path" not in st.session_state:
+    st.session_state.view_html_path = None
 
 # Base URL for API
 BASE_URL = "http://localhost:8000"
@@ -515,12 +523,10 @@ def create_prescription_html(patient_data, diagnosis, prescription):
     """Generate an HTML version of the prescription with proper RTL support"""
     import os
     import tempfile
-    
-    st.write("Debugging: Starting HTML generation...")
+    import base64
     
     # Create a temporary file
     temp_filename = os.path.join(tempfile.gettempdir(), "prescription.html")
-    st.write(f"Debugging: Will write to {temp_filename}")
     
     # Patient language and translation check
     patient_language = patient_data.get('language', 'English')
@@ -555,7 +561,16 @@ def create_prescription_html(patient_data, diagnosis, prescription):
             return text.replace("\n", "<br>")
         return ""
     
-    # Build HTML content as a single string - avoid f-strings with escapes
+    # Load QR code image and convert to base64 for embedding in HTML
+    try:
+        with open("Muawin_WA.png", "rb") as qr_file:
+            qr_base64 = base64.b64encode(qr_file.read()).decode('utf-8')
+        qr_img_html = f'<img src="data:image/png;base64,{qr_base64}" style="float:right; width:100px; height:100px; margin-left:15px;">'
+    except Exception as e:
+        st.warning(f"QR code image not found: {e}")
+        qr_img_html = ""
+    
+    # Build HTML content
     html = []
     html.append("<!DOCTYPE html>")
     html.append("<html>")
@@ -575,10 +590,16 @@ def create_prescription_html(patient_data, diagnosis, prescription):
     html.append("            .no-print { display: none; }")
     html.append("            body { margin: 1cm; }")
     html.append("        }")
+    html.append("        .header-container { display: flex; justify-content: space-between; align-items: center; }")
+    html.append("        .qr-code { width: 100px; height: 100px; }")
     html.append("    </style>")
     html.append("</head>")
     html.append("<body>")
-    html.append("    <h1>Medical Prescription</h1>")
+    
+    # Header with QR code
+    html.append("    <div class='header-container'>")
+    html.append(f"        <h1 style='margin-right: auto;'>Medical Prescription</h1>{qr_img_html}")
+    html.append("    </div>")
     
     # Header translation
     if needs_translation:
@@ -727,11 +748,9 @@ def create_prescription_html(patient_data, diagnosis, prescription):
     
     # Write to file
     try:
-    # Write to file
         with open(temp_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(html))
         
-        st.write(f"Debugging: HTML file written successfully to {temp_filename}")
         return temp_filename
     except Exception as e:
         st.error(f"Error generating HTML: {str(e)}")
@@ -801,6 +820,71 @@ def get_pdf_display_link(pdf_path):
         <iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>
     """
     return pdf_display
+
+def get_html_display_content(html_path):
+    """Read HTML file and return its content for embedding in iframe"""
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    
+    # Wrap the HTML content in an iframe with appropriate styling
+    iframe_content = f"""
+        <iframe srcdoc="{html_content.replace('"', '&quot;')}" 
+                style="width: 100%; height: 600px; border: 1px solid #ddd; border-radius: 5px;">
+        </iframe>
+    """
+    return iframe_content
+
+def create_modal_buttons(pdf_path, html_path, patient_name):
+    """Create download button and in-page viewer instead of modal popup"""
+    col1, col2 = st.columns(2)
+    
+    # Store the path in session state
+    st.session_state.view_pdf_path = pdf_path
+    st.session_state.view_html_path = html_path
+    
+    with col1:
+        # Provide direct download option
+        if pdf_path:
+            with open(pdf_path, "rb") as pdf_file:
+                PDFbyte = pdf_file.read()
+                
+            st.download_button(
+                label="💾 Download Prescription",
+                data=PDFbyte,
+                file_name=f"prescription_{patient_name.replace(' ', '_')}.pdf",
+                mime="application/pdf"
+            )
+    
+    with col2:
+        if html_path:
+            with open(html_path, "rb") as html_file:
+                html_bytes = html_file.read()
+                
+            st.download_button(
+                label="💾 Download HTML Version",
+                data=html_bytes,
+                file_name=f"prescription_{patient_name.replace(' ', '_')}.html",
+                mime="text/html"
+            )
+    
+    # Display PDF directly in the page (no modal needed)
+    st.markdown("### Prescription Preview")
+    pdf_display = get_pdf_display_link(pdf_path)
+    st.markdown(pdf_display, unsafe_allow_html=True)
+    
+    # Add a print button
+    st.markdown("""
+    <script>
+    function printPage() {
+        window.print();
+    }
+    </script>
+    <div style="text-align: center; margin: 20px 0;">
+        <button onclick="printPage()" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            🖨️ Print
+        </button>
+    </div>
+    """, unsafe_allow_html=True)
 
 def display_login():
     st.title("Muawin - AI Assistant for Doctors")
@@ -1249,39 +1333,24 @@ Showing the following symptoms:
                 # Use the new unified function that generates both formats
                 pdf_path, html_path = create_prescription(patient_data, diagnosis, prescription)
                 
-                if pdf_path:
-                    # Create download button for PDF
-                    with open(pdf_path, "rb") as pdf_file:
-                        PDFbyte = pdf_file.read()
-                        
-                    st.download_button(
-                        label="Download PDF",
-                        data=PDFbyte,
-                        file_name=f"prescription_{patient_data['name'].replace(' ', '_')}.pdf",
-                        mime="application/pdf"
-                    )
-                
-                if html_path:
-                    # Create download button for HTML (as backup option)
-                    with open(html_path, "rb") as html_file:
-                        html_bytes = html_file.read()
-                        
-                    st.download_button(
-                        label="Download HTML Version",
-                        data=html_bytes,
-                        file_name=f"prescription_{patient_data['name'].replace(' ', '_')}.html",
-                        mime="text/html"
-                    )
+                if pdf_path and html_path:
+                    # Store the paths in session state
+                    st.session_state.view_pdf_path = pdf_path
+                    st.session_state.view_html_path = html_path
                     
-                if pdf_path and save_consultation(
-                    st.session_state.doctor_id,
-                    st.session_state.patient_id,
-                    st.session_state.symptoms if isinstance(st.session_state.symptoms, list) else
-                        [s.strip() for s in st.session_state.symptoms.split(',')],
-                    diagnosis,
-                    prescription
-                ):
-                    st.success("Consultation saved to database")
+                    # Show view/download buttons
+                    create_modal_buttons(pdf_path, html_path, patient_data['name'])
+                    
+                    # Save consultation                
+                    if save_consultation(
+                        st.session_state.doctor_id,
+                        st.session_state.patient_id,
+                        st.session_state.symptoms if isinstance(st.session_state.symptoms, list) else
+                            [s.strip() for s in st.session_state.symptoms.split(',')],
+                        diagnosis,
+                        prescription
+                    ):
+                        st.success("Consultation saved to database")
         
         with col2:
             if st.button("End Consultation"):
@@ -1311,16 +1380,12 @@ Showing the following symptoms:
                 st.experimental_rerun()
     
     # Show modal if triggered
-    # if st.session_state.modal_pdf_preview and hasattr(st.session_state, 'pdf_path'):
-    #     modal = Modal("PDF Preview", key="pdf_preview_modal")
-    #     with modal.container():
-    #         st.markdown("### Prescription Preview")
-    #         pdf_display = get_pdf_display_link(st.session_state.pdf_path)
-    #         st.markdown(pdf_display, unsafe_allow_html=True)
-            
-    #         if st.button("Close Preview"):
-    #             st.session_state.modal_pdf_preview = False
-    #             st.experimental_rerun()
+    # if st.session_state.modal_pdf_view and hasattr(st.session_state, 'view_pdf_path'):
+    #     show_pdf_modal()
+
+# Show modal if triggered from a previous run
+if st.session_state.modal_pdf_view and hasattr(st.session_state, 'view_pdf_path'):
+    show_pdf_modal()
 
 # Main app logic
 if st.session_state.authenticated:
