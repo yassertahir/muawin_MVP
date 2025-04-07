@@ -38,6 +38,8 @@ if not os.path.exists("muawin.db"):
         doctor_id INTEGER,
         patient_id TEXT,
         symptoms TEXT,  -- JSON string array
+        vital_signs TEXT, -- New field: storing temperature, BP as JSON
+        pre_conditions TEXT, -- New field: pre-existing conditions
         diagnosis TEXT,
         prescription TEXT,
         consultation_date TEXT,

@@ -104,6 +104,19 @@ def get_patient_data(patient_id):
         st.error("Failed to fetch patient data")
         return None
 
+def get_patient_history(patient_id, limit=3):
+    """Get a patient's previous consultation records"""
+    try:
+        response = requests.get(f"{BASE_URL}/patient-history/{patient_id}?limit={limit}")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.warning(f"Could not fetch patient history: {response.status_code}")
+            return []
+    except Exception as e:
+        st.warning(f"Error fetching patient history: {str(e)}")
+        return []
+
 def get_common_symptoms():
     return [
         "Fever", "Headache", "Cough", "Sore Throat", "Fatigue", "Nausea",
@@ -112,6 +125,11 @@ def get_common_symptoms():
     ]
 
 def generate_diagnosis(patient_data, symptoms):
+    # Fetch patient history
+    patient_id = st.session_state.patient_id
+    patient_history = get_patient_history(patient_id)
+    
+    # Start with the basic patient data prompt
     prompt = f"""You are a primary healthcare physician in Pakistan. A patient with following details:
 Name: {patient_data['name']}
 Age: {patient_data['age']}
@@ -122,9 +140,47 @@ Pre-existing Conditions: {patient_data['pre_conditions']}
 
 Showing the following symptoms:
 {', '.join(symptoms)}
+"""
 
+    # Add patient history to the prompt if available
+    if patient_history:
+        prompt += "\nPATIENT HISTORY FROM PREVIOUS VISITS:\n"
+        for i, record in enumerate(patient_history):
+            prompt += f"\nVisit Date: {record['date']}\n"
+            
+            # Include vital signs if available
+            if record.get('vital_signs'):
+                vs = record['vital_signs']
+                prompt += f"Vital Signs: Temperature {vs.get('temperature', 'N/A')}, "
+                prompt += f"BP {vs.get('blood_pressure', 'N/A')}\n"
+                
+            # Include pre-existing conditions if available
+            if record.get('pre_conditions'):
+                prompt += f"Pre-existing Conditions: {record['pre_conditions']}\n"
+                
+            # Include symptoms
+            if record.get('symptoms'):
+                prompt += f"Symptoms: {', '.join(record['symptoms'])}\n"
+                
+            prompt += f"Diagnosis: {record['diagnosis']}\n"
+            prompt += f"Prescription: {record['prescription']}\n"
+            
+            if i < len(patient_history) - 1:
+                prompt += "-" * 40 + "\n"  # Separator between records
+                
+        # Ask LLM to include history summary in response
+        prompt += """
+Based on the patient's history from previous visits, please include a brief summary 
+of their medical history as part of your analysis.
+"""
+
+    # Complete the prompt with the expected response format
+    prompt += """
 You must evaluate this case and provide a structured response in the EXACT format below.
 Follow this format precisely, with no deviations:
+
+PATIENT HISTORY SUMMARY:
+[Brief summary of the patient's previous visits and relevant medical history. If no history is available, write 'No previous records available'.]
 
 DIAGNOSIS:
 1. [First most likely diagnosis]
@@ -156,13 +212,15 @@ Be concise and clinical. Do not include any text outside this structure. Do not 
         return None
 
 def regenerate_diagnosis(original_prompt, doctor_comments):
+    # Fetch patient history (it's included in the original_prompt)
+    
     prompt = f"""Another doctor has provide following comments about the diagnosis:
 {doctor_comments}
 
 Patient information is:
 {original_prompt}
 
-Analyse and provide diagnosis"""
+Analyse and provide diagnosis with the same format as before, including the PATIENT HISTORY SUMMARY section."""
 
     response = requests.post(
         f"{BASE_URL}/generate-diagnosis",
@@ -201,10 +259,20 @@ Include dosage, frequency, and duration for each medication. Format your respons
 
 def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
     try:
+        # Get vital signs and conditions from patient data
+        vital_signs = {
+            "temperature": st.session_state.patient_data.get('temperature', ''),
+            "blood_pressure": st.session_state.patient_data.get('blood_pressure', '')
+        }
+        
+        pre_conditions = st.session_state.patient_data.get('pre_conditions', '')
+        
         data = {
             "doctor_id": doctor_id,
             "patient_id": patient_id,
             "symptoms": symptoms,
+            "vital_signs": vital_signs,  # Add vital signs
+            "pre_conditions": pre_conditions,  # Add pre-existing conditions
             "diagnosis": diagnosis,
             "prescription": prescription,
             "date": datetime.now().isoformat()
@@ -1145,11 +1213,31 @@ def display_main_interface():
         st.subheader("AI-Generated Diagnosis")
         
         # Display the full diagnosis text
-        st.write(st.session_state.diagnosis)
+        diagnosis_text = st.session_state.diagnosis
+
+        # Check if there's a patient history summary section
+        if "PATIENT HISTORY SUMMARY:" in diagnosis_text:
+            history_start = diagnosis_text.find("PATIENT HISTORY SUMMARY:") + len("PATIENT HISTORY SUMMARY:")
+            history_end = diagnosis_text.find("DIAGNOSIS:")
+            
+            if history_end > history_start:
+                history_summary = diagnosis_text[history_start:history_end].strip()
+                st.subheader("Patient History Summary")
+                st.write(history_summary)
+                
+                # Remove history summary from the diagnosis display to avoid duplication
+                diagnosis_display = diagnosis_text[history_end:]
+                st.subheader("Current Diagnosis")
+                st.write(diagnosis_display)
+            else:
+                # Fall back to displaying the full text if parsing fails
+                st.write(diagnosis_text)
+        else:
+            # If no history section, display the diagnosis as before
+            st.write(diagnosis_text)
         
         # Extract possible diagnoses from the text
         import re
-        diagnosis_text = st.session_state.diagnosis
         possible_diagnoses = []
         
         # Extract diagnoses from the structured format

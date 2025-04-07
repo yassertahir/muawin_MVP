@@ -70,6 +70,8 @@ class ConsultationRequest(BaseModel):
     doctor_id: int
     patient_id: str
     symptoms: List[str]
+    vital_signs: dict  # New field for temperature, BP, etc
+    pre_conditions: str  # New field for pre-existing conditions
     diagnosis: str
     prescription: str
     date: str
@@ -189,6 +191,54 @@ def get_patient(patient_id: str):
         "language": "English"  # Default language
     }
 
+@app.get("/patient-history/{patient_id}")
+def get_patient_history(patient_id: str, limit: int = 3):
+    """Get patient's consultation history, limited to the most recent records"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        """
+        SELECT diagnosis, prescription, consultation_date, 
+               vital_signs, pre_conditions, symptoms
+        FROM consultations 
+        WHERE patient_id = ? 
+        ORDER BY consultation_date DESC 
+        LIMIT ?
+        """,
+        (patient_id, limit)
+    )
+    
+    results = cursor.fetchall()
+    conn.close()
+    
+    history = []
+    for row in results:
+        vital_signs = {}
+        try:
+            if row["vital_signs"]:
+                vital_signs = json.loads(row["vital_signs"])
+        except:
+            vital_signs = {}
+            
+        symptoms = []
+        try:
+            if row["symptoms"]:
+                symptoms = json.loads(row["symptoms"])
+        except:
+            symptoms = []
+            
+        history.append({
+            "diagnosis": row["diagnosis"],
+            "prescription": row["prescription"],
+            "date": row["consultation_date"],
+            "vital_signs": vital_signs,
+            "pre_conditions": row["pre_conditions"],
+            "symptoms": symptoms
+        })
+    
+    return history
+
 @app.post("/generate-diagnosis")
 def generate_diagnosis(request: DiagnosisRequest):
     try:
@@ -239,13 +289,17 @@ def save_consultation(request: ConsultationRequest):
     try:
         cursor.execute(
             """
-            INSERT INTO consultations (doctor_id, patient_id, symptoms, diagnosis, prescription, consultation_date)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO consultations (
+                doctor_id, patient_id, symptoms, vital_signs, pre_conditions, 
+                diagnosis, prescription, consultation_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.doctor_id,
                 request.patient_id,
                 json.dumps(request.symptoms),
+                json.dumps(request.vital_signs),  # Store as JSON
+                request.pre_conditions,
                 request.diagnosis,
                 request.prescription,
                 request.date
