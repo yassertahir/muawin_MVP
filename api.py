@@ -70,8 +70,7 @@ class ConsultationRequest(BaseModel):
     doctor_id: int
     patient_id: str
     symptoms: List[str]
-    vital_signs: dict  # New field for temperature, BP, etc
-    pre_conditions: str  # New field for pre-existing conditions
+    vital_signs: dict  # Keep this field for temperature, BP, etc
     diagnosis: str
     prescription: str
     date: str
@@ -197,10 +196,15 @@ def get_patient_history(patient_id: str, limit: int = 3):
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # First get the patient's pre-existing conditions (from patient table)
+    cursor.execute("SELECT pre_conditions FROM patients WHERE id = ?", (patient_id,))
+    patient_result = cursor.fetchone()
+    pre_conditions = patient_result["pre_conditions"] if patient_result else ""
+    
     cursor.execute(
         """
         SELECT diagnosis, prescription, consultation_date, 
-               vital_signs, pre_conditions, symptoms
+               vital_signs, symptoms
         FROM consultations 
         WHERE patient_id = ? 
         ORDER BY consultation_date DESC 
@@ -233,8 +237,9 @@ def get_patient_history(patient_id: str, limit: int = 3):
             "prescription": row["prescription"],
             "date": row["consultation_date"],
             "vital_signs": vital_signs,
-            "pre_conditions": row["pre_conditions"],
-            "symptoms": symptoms
+            "symptoms": symptoms,
+            # Add pre-existing conditions from patient table, not consultation
+            "pre_conditions": pre_conditions
         })
     
     return history
@@ -290,16 +295,15 @@ def save_consultation(request: ConsultationRequest):
         cursor.execute(
             """
             INSERT INTO consultations (
-                doctor_id, patient_id, symptoms, vital_signs, pre_conditions, 
+                doctor_id, patient_id, symptoms, vital_signs,
                 diagnosis, prescription, consultation_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.doctor_id,
                 request.patient_id,
                 json.dumps(request.symptoms),
-                json.dumps(request.vital_signs),  # Store as JSON
-                request.pre_conditions,
+                json.dumps(request.vital_signs),
                 request.diagnosis,
                 request.prescription,
                 request.date
@@ -321,6 +325,25 @@ def translate_text(request: TranslationRequest):
         return {"translated_text": translated.text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Translation error: {str(e)}")
+
+@app.post("/update-patient")
+def update_patient(patient_id: str, pre_conditions: str):
+    """Update patient information, particularly pre-existing conditions"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            "UPDATE patients SET pre_conditions = ? WHERE id = ?",
+            (pre_conditions, patient_id)
+        )
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 # Run server with: uvicorn api:app --reload
 if __name__ == "__main__":

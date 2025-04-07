@@ -107,6 +107,21 @@ def get_patient_data(patient_id):
         st.error("Failed to fetch patient data")
         return None
 
+def get_patient_details(patient_id):
+    try:
+        response = requests.get(f"{BASE_URL}/patients/{patient_id}")
+        if response.status_code == 200:
+            patient_data = response.json()
+            # Add the ID to the patient data
+            patient_data['id'] = patient_id
+            return patient_data
+        else:
+            st.error(f"Failed to get patient details: {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"Error retrieving patient details: {str(e)}")
+        return None
+
 def get_patient_history(patient_id, limit=3):
     """Get a patient's previous consultation records"""
     try:
@@ -262,20 +277,19 @@ Include dosage, frequency, and duration for each medication. Format your respons
 
 def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
     try:
-        # Get vital signs and conditions from patient data
+        # Get vital signs from patient data
         vital_signs = {
             "temperature": st.session_state.patient_data.get('temperature', ''),
             "blood_pressure": st.session_state.patient_data.get('blood_pressure', '')
         }
         
-        pre_conditions = st.session_state.patient_data.get('pre_conditions', '')
-        
+        # Remove pre_conditions from this data structure
         data = {
             "doctor_id": doctor_id,
             "patient_id": patient_id,
             "symptoms": symptoms,
-            "vital_signs": vital_signs,  # Add vital signs
-            "pre_conditions": pre_conditions,  # Add pre-existing conditions
+            "vital_signs": vital_signs,  # Keep vital signs
+            # No longer including pre_conditions here
             "diagnosis": diagnosis,
             "prescription": prescription,
             "date": datetime.now().isoformat()
@@ -287,7 +301,6 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
         )
         
         if response.status_code == 200:
-            st.success("Consultation saved to database")
             return True
         else:
             st.error(f"Failed to save consultation: {response.text}")
@@ -1059,6 +1072,22 @@ def parse_medication_details(med_line):
     
     return med
 
+def update_patient_conditions(patient_id, pre_conditions):
+    """Update patient's pre-existing conditions in the database"""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/update-patient",
+            params={"patient_id": patient_id, "pre_conditions": pre_conditions}
+        )
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"Failed to update patient conditions: {response.text}")
+            return False
+    except Exception as e:
+        st.error(f"Error updating patient data: {str(e)}")
+        return False
+
 def display_login():
     st.title("Muawin - AI Assistant for Doctors")
     
@@ -1168,9 +1197,12 @@ def display_main_interface():
                 selected_conditions.append(condition)
                 st.write(f"- {condition}")
         
-        # Update the pre_conditions in patient data
-        patient_data['pre_conditions'] = ", ".join(selected_conditions)
-        st.session_state.patient_data = patient_data
+        # Update the pre_conditions in patient data and the database
+        if selected_conditions != existing_conditions:
+            patient_data['pre_conditions'] = ", ".join(selected_conditions)
+            if update_patient_conditions(st.session_state.patient_id, patient_data['pre_conditions']):
+                st.success("Pre-existing conditions updated")
+            st.session_state.patient_data = patient_data
         
         # Symptom selection (keep existing code)
         st.subheader("Symptoms")
