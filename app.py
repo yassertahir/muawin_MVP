@@ -45,6 +45,8 @@ if "view_pdf_path" not in st.session_state:
     st.session_state.view_pdf_path = None
 if "view_html_path" not in st.session_state:
     st.session_state.view_html_path = None
+if "consultation_saved" not in st.session_state:
+    st.session_state.consultation_saved = False
 
 # Base URL for API
 BASE_URL = "http://localhost:8000"
@@ -84,6 +86,7 @@ def start_new_conversation():
     st.session_state.diagnosis = None
     st.session_state.prescription = None
     st.session_state.final_prescription = False
+    st.session_state.consultation_saved = False
     # Clear the medications list to prevent data leakage between consultations
     if "medications" in st.session_state:
         del st.session_state.medications
@@ -244,7 +247,7 @@ Gender: {patient_data['gender']}
 
 Generate a detailed prescription with appropriate medications available in the Pakistani market.
 Include dosage, frequency, and duration for each medication. Format your response as a table of medications,
- with Name, dosage, Duration and side-effects."""
+ with Name, dosage, Frequency, Duration and side-effects. Make sure all the columns are there and there are no extra columns."""
 
     response = requests.post(
         f"{BASE_URL}/generate-prescription",
@@ -498,24 +501,7 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
                 continue
                 
             if reading_meds and line.strip() and line.strip().startswith("• "):
-                # Parse medication info from line
-                med_line = line.strip()[2:].strip()  # Remove bullet point
-                parts = med_line.split(" - ")
-                
-                med = {
-                    "medication": parts[0].strip() if len(parts) > 0 else "",
-                    "dosage": parts[1].strip() if len(parts) > 1 else "",
-                    "frequency": parts[2].strip() if len(parts) > 2 else "",
-                    "duration": parts[3].strip() if len(parts) > 3 else ""
-                }
-                
-                # Extract side effects if present
-                if "Side effects:" in med_line:
-                    side_effects_start = med_line.find("Side effects:")
-                    if side_effects_start > 0:
-                        med["side_effects"] = med_line[side_effects_start + 13:].strip("() ")
-                
-                medications.append(med)
+                medications.append(parse_medication_details(line))
                 
             if reading_instructions and line.strip():
                 additional_instructions += line + "\n"
@@ -792,24 +778,7 @@ def create_prescription_html(patient_data, diagnosis, prescription):
                 continue
                 
             if reading_meds and line.strip() and line.strip().startswith("• "):
-                # Parse medication info from line
-                med_line = line.strip()[2:].strip()  # Remove bullet point
-                parts = med_line.split(" - ")
-                
-                med = {
-                    "medication": parts[0].strip() if len(parts) > 0 else "",
-                    "dosage": parts[1].strip() if len(parts) > 1 else "",
-                    "frequency": parts[2].strip() if len(parts) > 2 else "",
-                    "duration": parts[3].strip() if len(parts) > 3 else ""
-                }
-                
-                # Extract side effects if present
-                if "Side effects:" in med_line:
-                    side_effects_start = med_line.find("Side effects:")
-                    if side_effects_start > 0:
-                        med["side_effects"] = med_line[side_effects_start + 13:].strip("() ")
-                
-                medications.append(med)
+                medications.append(parse_medication_details(line))
                 
             if reading_instructions and line.strip():
                 additional_instructions += line + "\n"
@@ -1031,6 +1000,64 @@ def create_modal_buttons(pdf_path, html_path, patient_name):
         </button>
     </div>
     """, unsafe_allow_html=True)
+
+def parse_medication_details(med_line):
+    """Parse medication details and properly separate side effects"""
+    # Remove bullet point if present
+    if med_line.startswith("• "):
+        med_line = med_line[2:].strip()
+    
+    # Initialize medication parts
+    med = {
+        "medication": "",
+        "dosage": "",
+        "frequency": "",
+        "duration": "",
+        "side_effects": ""
+    }
+    
+    # First check if there are side effects anywhere in the line
+    if "Side effects:" in med_line:
+        # Split the line at "Side effects:"
+        main_part, side_effects_part = med_line.split("Side effects:", 1)
+        # Save side effects
+        med["side_effects"] = side_effects_part.strip("() ").strip()
+        # Continue parsing with the cleaned part
+        med_line = main_part.strip()
+    
+    # Check for opening parenthesis anywhere in the remaining text
+    # This catches cases where "Side effects:" isn't explicitly mentioned
+    paren_index = med_line.find("(")
+    if paren_index > 0:
+        # There's an opening parenthesis - this might be side effects
+        # Only process if there's a closing parenthesis too
+        if ")" in med_line[paren_index:]:
+            close_paren = med_line.find(")", paren_index)
+            # Extract content inside parentheses if not already captured as side effects
+            if not med["side_effects"]:
+                med["side_effects"] = med_line[paren_index+1:close_paren].strip()
+            # Remove the parenthetical phrase
+            med_line = med_line[:paren_index].strip() + " " + med_line[close_paren+1:].strip()
+    
+    # Parse the remaining parts
+    parts = med_line.split(" - ")
+    
+    # Assign parts to appropriate fields
+    if len(parts) > 0:
+        med["medication"] = parts[0].strip()
+    if len(parts) > 1:
+        med["dosage"] = parts[1].strip()
+    if len(parts) > 2:
+        med["frequency"] = parts[2].strip()
+    if len(parts) > 3:
+        med["duration"] = parts[3].strip()
+    
+    # Final cleanup - remove any remaining parentheses from all fields
+    for field in ["medication", "dosage", "frequency", "duration"]:
+        if "(" in med[field] or ")" in med[field]:
+            med[field] = med[field].replace("(", "").replace(")", "").strip()
+    
+    return med
 
 def display_login():
     st.title("Muawin - AI Assistant for Doctors")
@@ -1370,12 +1397,13 @@ Showing the following symptoms:
                 for i, line in enumerate(lines):
                     if i > 0 and line.startswith("|") and not "-|-" in line:
                         columns = [col.strip() for col in line.strip("|").split("|")]
-                        if len(columns) >= 4:  # At least medication, dosage, duration, side-effects
+                        if len(columns) >= 5:  # At least medication, dosage, frquency, duration, side-effects
                             medications.append({
                                 "medication": columns[0],
                                 "dosage": columns[1],
-                                "duration": columns[2],
-                                "side_effects": columns[3] if len(columns) > 3 else ""
+                                "frequency": columns[2],
+                                "duration": columns[3],
+                                "side_effects": columns[4] if len(columns) > 4 else ""
                             })
         
         # If table parsing failed, try normal text parsing
@@ -1571,23 +1599,7 @@ Showing the following symptoms:
                     continue
                     
                 if reading_meds and line.strip() and line.strip().startswith("• "):
-                    med_line = line.strip()[2:].strip()  # Remove bullet point
-                    parts = med_line.split(" - ")
-                    
-                    med = {
-                        "medication": parts[0].strip() if len(parts) > 0 else "",
-                        "dosage": parts[1].strip() if len(parts) > 1 else "",
-                        "frequency": parts[2].strip() if len(parts) > 2 else "",
-                        "duration": parts[3].strip() if len(parts) > 3 else ""
-                    }
-                    
-                    # Extract side effects if present
-                    if "Side effects:" in med_line:
-                        side_effects_start = med_line.find("Side effects:")
-                        if side_effects_start > 0:
-                            med["side_effects"] = med_line[side_effects_start + 13:].strip("() ")
-                    
-                    medications.append(med)
+                    medications.append(parse_medication_details(line))
                     
                 if reading_instructions and line.strip():
                     additional_instructions += line + "\n"
@@ -1631,9 +1643,10 @@ Showing the following symptoms:
         
         col1, col2 = st.columns(2)
         
+        # Modify the "Generate Prescription" button handler
         with col1:
             if st.button("Generate Prescription"):
-                # Use the new unified function that generates both formats
+                # Generate PDF and HTML
                 pdf_path, html_path = create_prescription(patient_data, diagnosis, prescription)
                 
                 if pdf_path and html_path:
@@ -1644,7 +1657,26 @@ Showing the following symptoms:
                     # Show view/download buttons
                     create_modal_buttons(pdf_path, html_path, patient_data['name'])
                     
-                    # Save consultation                
+                    # Only save if not already saved
+                    if not st.session_state.consultation_saved:
+                        if save_consultation(
+                            st.session_state.doctor_id,
+                            st.session_state.patient_id,
+                            st.session_state.symptoms if isinstance(st.session_state.symptoms, list) else
+                                [s.strip() for s in st.session_state.symptoms.split(',')],
+                            diagnosis,
+                            prescription
+                        ):
+                            st.success("Consultation saved to database")
+                            st.session_state.consultation_saved = True
+                        else:
+                            st.error("Failed to save consultation")
+
+        # Modify the "End Consultation" button handler
+        with col2:
+            if st.button("End Consultation"):
+                # Only save if not already saved
+                if not st.session_state.consultation_saved:
                     if save_consultation(
                         st.session_state.doctor_id,
                         st.session_state.patient_id,
@@ -1653,33 +1685,19 @@ Showing the following symptoms:
                         diagnosis,
                         prescription
                     ):
-                        st.success("Consultation saved to database")
-        
-        with col2:
-            if st.button("End Consultation"):
-                # Similar code as before...
-                # First save the consultation data
-                # PROBLEM: The symptoms are being passed as a string, but API expects a list
-                symptoms_list = st.session_state.symptoms
-                if isinstance(symptoms_list, str):
-                    # Convert comma-separated string to list if needed
-                    symptoms_list = [s.strip() for s in symptoms_list.split(',')]
-                    
-                if save_consultation(
-                    st.session_state.doctor_id,
-                    st.session_state.patient_id,
-                    symptoms_list,  # Pass as a list
-                    diagnosis,
-                    prescription
-                ):
-                    st.success("Consultation saved successfully")
+                        st.success("Consultation saved successfully")
+                        st.session_state.consultation_saved = True
+                    else:
+                        st.error("Failed to save consultation")
+                        # Option to continue or force end
+                        if st.button("Force End Without Saving"):
+                            start_new_conversation()
+                            st.experimental_rerun()
                 else:
-                    st.error("Failed to save consultation")
-                    # Option to continue or force end
-                    if st.button("Force End Without Saving"):
-                        start_new_conversation()
-                        st.experimental_rerun()
-                # Only clear the session if save was successful
+                    # Already saved, just end the consultation
+                    st.success("Consultation already saved, ending session")
+                    
+                # Reset for new consultation
                 start_new_conversation()
                 st.experimental_rerun()
     
