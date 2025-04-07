@@ -1003,7 +1003,7 @@ def display_main_interface():
     elif st.session_state.patient_data and not st.session_state.symptoms:
         # Display patient information
         patient_data = st.session_state.patient_data
-        
+    
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Patient Information")
@@ -1014,14 +1014,73 @@ def display_main_interface():
         
         with col2:
             st.subheader("Vital Signs")
-            st.write(f"**Temperature:** {patient_data['temperature']} °C")
-            st.write(f"**Blood Pressure:** {patient_data['blood_pressure']}")
-            st.write(f"**Pre-existing Conditions:** {patient_data['pre_conditions']}")
+            # Make temperature editable
+            temp_default = patient_data.get('temperature', '')
+            patient_data['temperature'] = st.text_input("Temperature (°C)", 
+                                                    value=temp_default,
+                                                    help="Enter patient temperature")
+            
+            # Make blood pressure editable
+            bp_default = patient_data.get('blood_pressure', '')
+            patient_data['blood_pressure'] = st.text_input("Blood Pressure", 
+                                                        value=bp_default,
+                                                        help="Format: systolic/diastolic (e.g., 120/80)")
+            
+            # Update session state with the edited values
+            st.session_state.patient_data = patient_data
         
-        # Symptom selection
+        # Pre-existing conditions as interactive selection
+        st.subheader("Pre-existing Conditions")
+        
+        # List of common pre-existing conditions
+        common_conditions = [
+            "Diabetes", "Hypertension", "Asthma", "COPD", "Heart Disease", 
+            "Stroke", "Cancer", "Arthritis", "Depression", "Anxiety", 
+            "Thyroid Disorder", "Kidney Disease", "Liver Disease", "Obesity",
+            "Allergies", "Epilepsy"
+        ]
+        
+        # Get existing conditions as a list
+        existing_conditions = []
+        if patient_data.get('pre_conditions'):
+            existing_conditions = [c.strip() for c in patient_data['pre_conditions'].split(',')]
+        
+        # Store selected conditions
+        selected_conditions = []
+        
+        # Create checkbox columns for conditions
+        cond_cols = st.columns(3)
+        for i, condition in enumerate(common_conditions):
+            col_idx = i % 3
+            with cond_cols[col_idx]:
+                # Check if this condition is in the existing list
+                is_checked = condition in existing_conditions
+                if st.checkbox(condition, value=is_checked, key=f"condition_{condition}"):
+                    selected_conditions.append(condition)
+        
+        # Custom condition input
+        custom_condition = st.text_input("Add other pre-existing condition")
+        if custom_condition and st.button("Add Condition"):
+            if "temp_custom_conditions" not in st.session_state:
+                st.session_state.temp_custom_conditions = []
+            st.session_state.temp_custom_conditions.append(custom_condition)
+            st.experimental_rerun()
+        
+        # Display custom conditions that have been added but not yet confirmed
+        if "temp_custom_conditions" in st.session_state and st.session_state.temp_custom_conditions:
+            st.write("**Custom conditions to be added:**")
+            for condition in st.session_state.temp_custom_conditions:
+                selected_conditions.append(condition)
+                st.write(f"- {condition}")
+        
+        # Update the pre_conditions in patient data
+        patient_data['pre_conditions'] = ", ".join(selected_conditions)
+        st.session_state.patient_data = patient_data
+        
+        # Symptom selection (keep existing code)
         st.subheader("Symptoms")
         common_symptoms = get_common_symptoms()
-        
+            
         selected_symptoms = []
         cols = st.columns(3)
         for i, symptom in enumerate(common_symptoms):
