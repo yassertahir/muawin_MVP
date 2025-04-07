@@ -410,12 +410,12 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
         if prescription_label:
             story.append(Paragraph(f"({prescription_label})", styles['Translation']))
     
+    # Parse prescription
     if "PRESCRIPTION:" in prescription and "• " in prescription:
-        # Parse structured prescription
         medications = []
         additional_instructions = ""
         
-        lines = prescription.split('\n')
+        lines = prescription.split("\n")
         reading_meds = False
         reading_instructions = False
         
@@ -430,28 +430,57 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
                 continue
                 
             if reading_meds and line.strip() and line.strip().startswith("• "):
-                medications.append(line.strip())
+                # Parse medication info from line
+                med_line = line.strip()[2:].strip()  # Remove bullet point
+                parts = med_line.split(" - ")
+                
+                med = {
+                    "medication": parts[0].strip() if len(parts) > 0 else "",
+                    "dosage": parts[1].strip() if len(parts) > 1 else "",
+                    "frequency": parts[2].strip() if len(parts) > 2 else "",
+                    "duration": parts[3].strip() if len(parts) > 3 else ""
+                }
+                
+                # Extract side effects if present
+                if "Side effects:" in med_line:
+                    side_effects_start = med_line.find("Side effects:")
+                    if side_effects_start > 0:
+                        med["side_effects"] = med_line[side_effects_start + 13:].strip("() ")
+                
+                medications.append(med)
                 
             if reading_instructions and line.strip():
                 additional_instructions += line + "\n"
         
-        # Add medications
+        # Create HTML table for medications
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("<b>Medications:</b>", styles['Heading3']))
+        table_data = [["Medication", "Dosage", "Frequency", "Duration", "Side Effects"]]
         for med in medications:
-            story.append(Paragraph(med.replace("• ", "&#8226; "), styles['Normal']))
-            if needs_translation:
-                med_translation = translate_text(med, patient_language)
-                if med_translation:
-                    story.append(Paragraph(med_translation.replace("• ", "&#8226; "), styles['Translation']))
+            table_data.append([
+                med.get('medication', ''),
+                med.get('dosage', ''),
+                med.get('frequency', ''),
+                med.get('duration', ''),
+                med.get('side_effects', '')
+            ])
+        from reportlab.platypus import Table, TableStyle
+        from reportlab.lib import colors
+        table = Table(table_data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        story.append(table)
         
-        # Add additional instructions
         if additional_instructions.strip():
             story.append(Spacer(1, 12))
             story.append(Paragraph("<b>Additional Instructions:</b>", styles['Heading3']))
-            if needs_translation:
-                instr_label = translate_text("Additional Instructions", patient_language)
-                if instr_label:
-                    story.append(Paragraph(f"({instr_label})", styles['Translation']))
-            
             story.append(Paragraph(additional_instructions.replace('\n', '<br/>'), styles['Normal']))
             if needs_translation:
                 instr_translation = translate_text(additional_instructions, patient_language)
@@ -695,20 +724,69 @@ def create_prescription_html(patient_data, diagnosis, prescription):
                 continue
                 
             if reading_meds and line.strip() and line.strip().startswith("• "):
-                medications.append(line.strip())
+                # Parse medication info from line
+                med_line = line.strip()[2:].strip()  # Remove bullet point
+                parts = med_line.split(" - ")
+                
+                med = {
+                    "medication": parts[0].strip() if len(parts) > 0 else "",
+                    "dosage": parts[1].strip() if len(parts) > 1 else "",
+                    "frequency": parts[2].strip() if len(parts) > 2 else "",
+                    "duration": parts[3].strip() if len(parts) > 3 else ""
+                }
+                
+                # Extract side effects if present
+                if "Side effects:" in med_line:
+                    side_effects_start = med_line.find("Side effects:")
+                    if side_effects_start > 0:
+                        med["side_effects"] = med_line[side_effects_start + 13:].strip("() ")
+                
+                medications.append(med)
                 
             if reading_instructions and line.strip():
                 additional_instructions += line + "\n"
         
-        # Add medications with translations
+        # Create HTML table for medications
         html.append("        <div class='content'>")
+        html.append("            <table style='width: 100%; border-collapse: collapse; margin: 15px 0;'>")
+        html.append("                <thead>")
+        html.append("                    <tr style='background-color: #f2f2f2;'>")
+        html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Medication</th>")
+        html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Dosage</th>")
+        html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Frequency</th>")
+        html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Duration</th>")
+        html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Side Effects</th>")
+        html.append("                    </tr>")
+        html.append("                </thead>")
+        html.append("                <tbody>")
+        
+        # Add each medication as a row
         for med in medications:
-            html.append(f"            <div>{med}</div>")
+            html.append("                    <tr>")
+            html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('medication', '')}</td>")
+            html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('dosage', '')}</td>")
+            html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('frequency', '')}</td>")
+            html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('duration', '')}</td>")
+            html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('side_effects', '')}</td>")
+            html.append("                    </tr>")
+            
+            # If translation needed, add a row for translation
             if needs_translation:
-                med_translation = translate_text(med, patient_language)
+                med_str = f"{med.get('medication', '')}"
+                if med.get('dosage'): med_str += f" - {med.get('dosage')}"
+                if med.get('frequency'): med_str += f" - {med.get('frequency')}"
+                if med.get('duration'): med_str += f" - {med.get('duration')}"
+                if med.get('side_effects'): med_str += f" (Side effects: {med.get('side_effects')})"
+                
+                med_translation = translate_text(med_str, patient_language)
                 if med_translation:
                     direction_class = "rtl" if is_rtl else "ltr"
-                    html.append(f"            <div class='translation {direction_class}'>{med_translation}</div>")
+                    html.append(f"                    <tr class='{direction_class}' style='background-color: #f9f9f9;'>")
+                    html.append(f"                        <td colspan='5' style='border: 1px solid #ddd; padding: 8px; font-style: italic; color: #555;'>{med_translation}</td>")
+                    html.append("                    </tr>")
+        
+        html.append("                </tbody>")
+        html.append("            </table>")
         html.append("        </div>")
         
         # Add additional instructions
@@ -1316,6 +1394,7 @@ Showing the following symptoms:
         # Display and edit prescription
         patient_data = st.session_state.patient_data
         diagnosis = st.session_state.diagnosis
+        prescription = st.session_state.prescription
         
         st.subheader("Patient Information")
         st.write(f"**Name:** {patient_data['name']}, **Age:** {patient_data['age']}, **Gender:** {patient_data['gender']}")
@@ -1324,7 +1403,84 @@ Showing the following symptoms:
         st.write(diagnosis)
         
         st.subheader("Prescription")
-        prescription = st.text_area("Edit Prescription if needed", value=st.session_state.prescription, height=300)
+        
+        # Parse prescription into table format
+        medications = []
+        additional_instructions = ""
+        
+        if "PRESCRIPTION:" in prescription and "• " in prescription:
+            lines = prescription.split("\n")
+            reading_meds = False
+            reading_instructions = False
+            
+            for line in lines:
+                if "PRESCRIPTION:" in line:
+                    reading_meds = True
+                    continue
+                    
+                if "ADDITIONAL INSTRUCTIONS:" in line:
+                    reading_meds = False
+                    reading_instructions = True
+                    continue
+                    
+                if reading_meds and line.strip() and line.strip().startswith("• "):
+                    med_line = line.strip()[2:].strip()  # Remove bullet point
+                    parts = med_line.split(" - ")
+                    
+                    med = {
+                        "medication": parts[0].strip() if len(parts) > 0 else "",
+                        "dosage": parts[1].strip() if len(parts) > 1 else "",
+                        "frequency": parts[2].strip() if len(parts) > 2 else "",
+                        "duration": parts[3].strip() if len(parts) > 3 else ""
+                    }
+                    
+                    # Extract side effects if present
+                    if "Side effects:" in med_line:
+                        side_effects_start = med_line.find("Side effects:")
+                        if side_effects_start > 0:
+                            med["side_effects"] = med_line[side_effects_start + 13:].strip("() ")
+                    
+                    medications.append(med)
+                    
+                if reading_instructions and line.strip():
+                    additional_instructions += line + "\n"
+        
+        # Display medications in a table
+        if medications:
+            st.write("### Medications")
+            
+            # Create DataFrame for easy table display
+            import pandas as pd
+            meds_df = pd.DataFrame(medications)
+            
+            # Rename columns for better display
+            column_names = {
+                "medication": "Medication",
+                "dosage": "Dosage",
+                "frequency": "Frequency", 
+                "duration": "Duration",
+                "side_effects": "Side Effects"
+            }
+            
+            # Only include columns that exist in the dataframe
+            display_columns = [col for col in ["medication", "dosage", "frequency", "duration", "side_effects"] 
+                            if col in meds_df.columns]
+            
+            # Rename columns and display
+            meds_df = meds_df[display_columns].rename(columns={k: v for k, v in column_names.items() if k in display_columns})
+            st.table(meds_df)
+        
+        # Display additional instructions
+        if additional_instructions.strip():
+            st.write("### Additional Instructions")
+            st.write(additional_instructions)
+        
+        # Allow editing in text area if needed
+        with st.expander("Edit Raw Prescription Text"):
+            edited_prescription = st.text_area("Edit if needed", value=prescription, height=300)
+            if edited_prescription != prescription:
+                prescription = edited_prescription
+                st.session_state.prescription = prescription
         
         col1, col2 = st.columns(2)
         
@@ -1354,6 +1510,7 @@ Showing the following symptoms:
         
         with col2:
             if st.button("End Consultation"):
+                # Similar code as before...
                 # First save the consultation data
                 # PROBLEM: The symptoms are being passed as a string, but API expects a list
                 symptoms_list = st.session_state.symptoms
