@@ -73,6 +73,7 @@ class ConsultationRequest(BaseModel):
     vital_signs: dict  # Keep this field for temperature, BP, etc
     diagnosis: str
     prescription: str
+    prescription_pdf: Optional[str] = None  # Path to PDF file
     date: str
 
 class TranslationRequest(BaseModel):
@@ -296,8 +297,8 @@ def save_consultation(request: ConsultationRequest):
             """
             INSERT INTO consultations (
                 doctor_id, patient_id, symptoms, vital_signs,
-                diagnosis, prescription, consultation_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                diagnosis, prescription, prescription_pdf, consultation_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.doctor_id,
@@ -306,11 +307,14 @@ def save_consultation(request: ConsultationRequest):
                 json.dumps(request.vital_signs),
                 request.diagnosis,
                 request.prescription,
+                request.prescription_pdf,
                 request.date
             )
         )
+        # Get the ID of the inserted record
+        consultation_id = cursor.lastrowid
         conn.commit()
-        return {"status": "success"}
+        return {"status": "success", "consultation_id": consultation_id}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

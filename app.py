@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import json
+import sqlite3
 from datetime import datetime
 import os
 import tempfile
@@ -283,24 +284,59 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
             "blood_pressure": st.session_state.patient_data.get('blood_pressure', '')
         }
         
-        # Remove pre_conditions from this data structure
+        # Initial data structure without prescription_pdf
         data = {
             "doctor_id": doctor_id,
             "patient_id": patient_id,
             "symptoms": symptoms,
-            "vital_signs": vital_signs,  # Keep vital signs
-            # No longer including pre_conditions here
+            "vital_signs": vital_signs,
             "diagnosis": diagnosis,
             "prescription": prescription,
             "date": datetime.now().isoformat()
         }
         
+        # Save consultation to get the consultation_id first
         response = requests.post(
             f"{BASE_URL}/save-consultation",
             json=data
         )
         
         if response.status_code == 200:
+            result = response.json()
+            consultation_id = result.get("consultation_id")
+            
+            # Now save the PDF if we have a PDF path and consultation_id
+            if consultation_id and hasattr(st.session_state, 'view_pdf_path') and st.session_state.view_pdf_path:
+                # Save the PDF to data/prescription directory
+                pdf_dest_path = save_prescription_pdf(
+                    st.session_state.view_pdf_path, 
+                    patient_id, 
+                    consultation_id
+                )
+                
+                # If PDF was saved successfully, update the consultation record
+                if pdf_dest_path:
+                    # Create updated data with prescription_pdf path
+                    updated_data = data.copy()
+                    updated_data["prescription_pdf"] = pdf_dest_path
+                    
+                    # Update via a separate API endpoint or directly in the database
+                    conn = sqlite3.connect("muawin.db")
+                    cursor = conn.cursor()
+                    
+                    try:
+                        cursor.execute(
+                            "UPDATE consultations SET prescription_pdf = ? WHERE id = ?",
+                            (pdf_dest_path, consultation_id)
+                        )
+                        conn.commit()
+                        st.success(f"Prescription PDF path saved to database: {pdf_dest_path}")
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Failed to update prescription PDF path: {str(e)}")
+                    finally:
+                        conn.close()
+            
             return True
         else:
             st.error(f"Failed to save consultation: {response.text}")
@@ -1087,6 +1123,47 @@ def update_patient_conditions(patient_id, pre_conditions):
     except Exception as e:
         st.error(f"Error updating patient data: {str(e)}")
         return False
+
+def save_prescription_pdf(pdf_path, patient_id, consultation_id):
+    """
+    Save a prescription PDF to the data/prescription directory with format
+    PATIENTID_CONSULTATIONID.pdf
+    
+    Args:
+        pdf_path: Path to the temporary PDF file
+        patient_id: ID of the patient
+        consultation_id: ID of the consultation
+        
+    Returns:
+        Path to the saved PDF file or None if failed
+    """
+    import os
+    import shutil
+    
+    # Create data/prescription directory if it doesn't exist
+    prescription_dir = "data/prescription"
+    if not os.path.exists(prescription_dir):
+        try:
+            os.makedirs(prescription_dir)
+        except Exception as e:
+            st.error(f"Failed to create prescription directory: {str(e)}")
+            return None
+    
+    # Create the filename: PATIENTID_CONSULTATIONID.pdf
+    filename = f"{patient_id}_{consultation_id}.pdf"
+    dest_path = os.path.join(prescription_dir, filename)
+    
+    # Get absolute path for external applications
+    abs_dest_path = os.path.abspath(dest_path)
+    
+    try:
+        # Copy the file from temporary location to destination
+        shutil.copyfile(pdf_path, dest_path)
+        st.success(f"Prescription PDF saved to {dest_path}")
+        return abs_dest_path
+    except Exception as e:
+        st.error(f"Failed to save prescription PDF: {str(e)}")
+        return None
 
 def display_login():
     st.title("Muawin - AI Assistant for Doctors")
