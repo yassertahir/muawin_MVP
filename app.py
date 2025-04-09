@@ -15,6 +15,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+# Import our new function for updating patients.csv
+from db_update_patients import update_patients_csv
 
 # Configure the page
 st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
@@ -94,8 +96,13 @@ def start_new_conversation():
 
 def get_patient_list():
     try:
-        df = pd.read_csv("patients.csv")
-        return df["patientId"].tolist()
+        # Query patients directly from the database
+        conn = sqlite3.connect("muawin.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM patients")
+        patients = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return patients
     except Exception as e:
         st.error(f"Error loading patient list: {e}")
         return []
@@ -103,7 +110,34 @@ def get_patient_list():
 def get_patient_data(patient_id):
     response = requests.get(f"{BASE_URL}/patient/{patient_id}")
     if response.status_code == 200:
-        return response.json()
+        patient_data = response.json()
+        
+        # Debug logging to see what's in the pre_conditions field
+        if 'pre_conditions' in patient_data:
+            print(f"DEBUG - Loaded pre_conditions: {patient_data['pre_conditions']}, type: {type(patient_data['pre_conditions'])}")
+            
+            # Handle different formats of pre_conditions
+            if isinstance(patient_data['pre_conditions'], list):
+                patient_data['pre_conditions'] = ", ".join(patient_data['pre_conditions'])
+            elif patient_data['pre_conditions'] and patient_data['pre_conditions'].startswith("[") and patient_data['pre_conditions'].endswith("]"):
+                # This might be a string representation of a list
+                try:
+                    # Try to parse it as JSON
+                    import json
+                    conditions_list = json.loads(patient_data['pre_conditions'].replace("'", "\""))
+                    if isinstance(conditions_list, list):
+                        patient_data['pre_conditions'] = ", ".join(conditions_list)
+                except:
+                    # If parsing fails, clean up the string
+                    patient_data['pre_conditions'] = (patient_data['pre_conditions']
+                                                    .strip("[]")
+                                                    .replace("'", "")
+                                                    .replace("\"", ""))
+                                                    
+            # Print the final format
+            print(f"DEBUG - Normalized pre_conditions: {patient_data['pre_conditions']}")
+        
+        return patient_data
     else:
         st.error("Failed to fetch patient data")
         return None
@@ -162,7 +196,7 @@ Showing the following symptoms:
 """
 
     # Add patient history to the prompt if available
-    if patient_history:
+    if (patient_history):
         prompt += "\nPATIENT HISTORY FROM PREVIOUS VISITS:\n"
         for i, record in enumerate(patient_history):
             prompt += f"\nVisit Date: {record['date']}\n"
@@ -1111,9 +1145,20 @@ def parse_medication_details(med_line):
 def update_patient_conditions(patient_id, pre_conditions):
     """Update patient's pre-existing conditions in the database"""
     try:
+        # Handle different formats of pre_conditions
+        if isinstance(pre_conditions, list):
+            # Convert list to comma-separated string
+            pre_conditions_str = ", ".join(pre_conditions)
+        else:
+            # If it's already a string, just use it
+            pre_conditions_str = pre_conditions
+            
+        # Remove any square brackets if they accidentally got included in the string
+        pre_conditions_str = pre_conditions_str.replace("[", "").replace("]", "").replace("'", "").replace("\"", "")
+            
         response = requests.post(
             f"{BASE_URL}/update-patient",
-            params={"patient_id": patient_id, "pre_conditions": pre_conditions}
+            params={"patient_id": patient_id, "pre_conditions": pre_conditions_str}
         )
         if response.status_code == 200:
             return True
