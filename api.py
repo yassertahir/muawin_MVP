@@ -73,6 +73,7 @@ class ConsultationRequest(BaseModel):
     vital_signs: dict  # Keep this field for temperature, BP, etc
     diagnosis: str
     prescription: str
+    tests: Optional[List[str]] = None  # List of tests to be performed
     prescription_pdf: Optional[str] = None  # Path to PDF file
     date: str
 
@@ -81,7 +82,7 @@ class TranslationRequest(BaseModel):
     target_language: str
 
 # Helper function to create prescription PDF
-def create_prescription_pdf(patient_data, diagnosis, prescription):
+def create_prescription_pdf(patient_data, diagnosis, prescription, tests=None):
     from fpdf import FPDF
     import tempfile
     import os
@@ -131,6 +132,16 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
     
     # Add prescription with multiline support
     pdf.multi_cell(0, 8, prescription_text)
+    
+    # Add tests if present
+    if tests and len(tests) > 0:
+        pdf.ln(5)
+        pdf.set_font('DejaVu', '', 14)
+        pdf.cell(0, 10, "Recommended Tests:", 0, 1)
+        pdf.set_font('DejaVu', '', 12)
+        
+        for test in tests:
+            pdf.cell(0, 8, f"- {test}", 0, 1)
     
     # Output the PDF
     pdf.output(temp_filename)
@@ -205,7 +216,7 @@ def get_patient_history(patient_id: str, limit: int = 3):
     cursor.execute(
         """
         SELECT diagnosis, prescription, consultation_date, 
-               vital_signs, symptoms
+               vital_signs, symptoms, tests
         FROM consultations 
         WHERE patient_id = ? 
         ORDER BY consultation_date DESC 
@@ -233,12 +244,20 @@ def get_patient_history(patient_id: str, limit: int = 3):
         except:
             symptoms = []
             
+        tests = []
+        try:
+            if row["tests"]:
+                tests = json.loads(row["tests"])
+        except:
+            tests = []
+            
         history.append({
             "diagnosis": row["diagnosis"],
             "prescription": row["prescription"],
             "date": row["consultation_date"],
             "vital_signs": vital_signs,
             "symptoms": symptoms,
+            "tests": tests,
             # Add pre-existing conditions from patient table, not consultation
             "pre_conditions": pre_conditions
         })
@@ -297,8 +316,8 @@ def save_consultation(request: ConsultationRequest):
             """
             INSERT INTO consultations (
                 doctor_id, patient_id, symptoms, vital_signs,
-                diagnosis, prescription, prescription_pdf, consultation_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                diagnosis, prescription, prescription_pdf, consultation_date, tests
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.doctor_id,
@@ -308,7 +327,8 @@ def save_consultation(request: ConsultationRequest):
                 request.diagnosis,
                 request.prescription,
                 request.prescription_pdf,
-                request.date
+                request.date,
+                json.dumps(request.tests) if request.tests else None
             )
         )
         # Get the ID of the inserted record

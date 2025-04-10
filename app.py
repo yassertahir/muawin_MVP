@@ -36,6 +36,8 @@ if "diagnosis" not in st.session_state:
     st.session_state.diagnosis = None
 if "prescription" not in st.session_state:
     st.session_state.prescription = None
+if "tests" not in st.session_state:
+    st.session_state.tests = []
 if "final_prescription" not in st.session_state:
     st.session_state.final_prescription = False
 if "modal_pdf_preview" not in st.session_state:
@@ -90,6 +92,11 @@ def start_new_conversation():
     st.session_state.prescription = None
     st.session_state.final_prescription = False
     st.session_state.consultation_saved = False
+    # Reset the tests list for new consultations
+    st.session_state.tests = []
+    # Reset selected_tests to prevent tests from persisting between consultations
+    if "selected_tests" in st.session_state:
+        st.session_state.selected_tests = []
     # Clear the medications list to prevent data leakage between consultations
     if "medications" in st.session_state:
         del st.session_state.medications
@@ -175,6 +182,29 @@ def get_common_symptoms():
         "Fever", "Headache", "Cough", "Sore Throat", "Fatigue", "Nausea",
         "Vomiting", "Diarrhea", "Abdominal Pain", "Chest Pain", "Shortness of Breath",
         "Dizziness", "Rash", "Joint Pain", "Back Pain", "Sweating", "Chills"
+    ]
+
+def get_common_tests():
+    """Return a list of common medical tests for selection"""
+    return [
+        "Complete Blood Count (CBC)", 
+        "Blood Glucose Test", 
+        "Lipid Profile", 
+        "Liver Function Test (LFT)",
+        "Kidney Function Test (KFT)", 
+        "Thyroid Function Test",
+        "Urine Analysis", 
+        "Electrocardiogram (ECG/EKG)", 
+        "Chest X-ray",
+        "Ultrasound", 
+        "CT Scan", 
+        "MRI",
+        "COVID-19 Test", 
+        "Hemoglobin A1c (HbA1c)", 
+        "C-Reactive Protein (CRP)",
+        "Vitamin D Test", 
+        "Vitamin B12 Test",
+        "Hepatitis Panel"
     ]
 
 def generate_diagnosis(patient_data, symptoms):
@@ -310,7 +340,7 @@ Include dosage, frequency, and duration for each medication. Format your respons
         st.error("Failed to generate prescription")
         return None
 
-def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
+def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription, tests=None):
     try:
         # Get vital signs from patient data
         vital_signs = {
@@ -326,6 +356,7 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
             "vital_signs": vital_signs,
             "diagnosis": diagnosis,
             "prescription": prescription,
+            "tests": tests if tests else st.session_state.tests,  # Use provided tests or from session state
             "date": datetime.now().isoformat()
         }
         
@@ -379,7 +410,7 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription):
         st.error(f"Error saving consultation: {str(e)}")
         return False
 
-def create_prescription_pdf(patient_data, diagnosis, prescription):
+def create_prescription_pdf(patient_data, diagnosis, prescription, tests=None):
     import tempfile
     import os
     import requests
@@ -631,6 +662,23 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
             if prescription_translation:
                 story.append(Paragraph(prescription_translation.replace('\n', '<br/>'), styles['Translation']))
     
+    # Add tests if present
+    if tests and len(tests) > 0:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("<b>Recommended Medical Tests:</b>", styles['Heading3']))
+        if needs_translation:
+            tests_label = translate_text("Recommended Medical Tests", patient_language)
+            if tests_label:
+                story.append(Paragraph(f"({tests_label})", styles['Translation']))
+                
+        # Add tests as bullet points
+        for test in tests:
+            story.append(Paragraph(f"• {test}", styles['Normal']))
+            if needs_translation:
+                test_translation = translate_text(test, patient_language)
+                if test_translation:
+                    story.append(Paragraph(f"({test_translation})", styles['Translation']))
+    
     story.append(Spacer(1, 24))
     
     # Language notice
@@ -672,6 +720,15 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
             pdf.set_font('Arial', '', 12)
             pdf.multi_cell(0, 8, prescription.encode('ascii', 'replace').decode('ascii'))
             
+            # Add tests if present
+            if tests and len(tests) > 0:
+                pdf.ln(5)
+                pdf.set_font('Arial', 'B', 14)
+                pdf.cell(0, 10, "Recommended Tests:", 0, 1)
+                pdf.set_font('Arial', '', 12)
+                for test in tests:
+                    pdf.cell(0, 8, f"- {test}", 0, 1)
+            
             pdf.output(temp_filename)
             st.warning("Generated PDF with limited character support (no translations).")
         except Exception as e2:
@@ -680,12 +737,12 @@ def create_prescription_pdf(patient_data, diagnosis, prescription):
     
     return temp_filename
 
-def create_prescription_pdf_legacy(patient_data, diagnosis, prescription):
+def create_prescription_pdf_legacy(patient_data, diagnosis, prescription, tests=None):
     """Legacy PDF generation function used as fallback when HTML-to-PDF fails"""
     st.write("Using legacy PDF generation method...")
-    return create_prescription_pdf(patient_data, diagnosis, prescription)
+    return create_prescription_pdf(patient_data, diagnosis, prescription, tests)
 
-def create_prescription_html(patient_data, diagnosis, prescription):
+def create_prescription_html(patient_data, diagnosis, prescription, tests=None):
     """Generate an HTML version of the prescription with proper RTL support"""
     import os
     import tempfile
@@ -935,6 +992,29 @@ def create_prescription_html(patient_data, diagnosis, prescription):
     
     html.append("    </div>")
     
+    # Add tests section if tests are present
+    if tests and len(tests) > 0:
+        html.append("    <div class='section'>")
+        html.append("        <div class='header'>Recommended Medical Tests:</div>")
+        if needs_translation:
+            tests_label = translate_text("Recommended Medical Tests", patient_language)
+            if tests_label:
+                direction_class = "rtl" if is_rtl else "ltr"
+                html.append(f"        <div class='translation {direction_class}'>{tests_label}</div>")
+        
+        html.append("        <div class='content'>")
+        html.append("            <ul>")
+        for test in tests:
+            html.append(f"                <li>{test}</li>")
+            if needs_translation:
+                test_translation = translate_text(test, patient_language)
+                if test_translation:
+                    direction_class = "rtl" if is_rtl else "ltr"
+                    html.append(f"                <div class='translation {direction_class}'>({test_translation})</div>")
+        html.append("            </ul>")
+        html.append("        </div>")
+        html.append("    </div>")
+    
     # Print button
     html.append("    <div class='no-print' style='margin-top: 30px; text-align: center;'>")
     html.append("        <button onclick='window.print()'>Print Prescription</button>")
@@ -962,8 +1042,11 @@ def create_prescription(patient_data, diagnosis, prescription):
     
     st.write("Generating prescription documents...")
     
+    # Get tests from session state
+    tests = st.session_state.tests if hasattr(st.session_state, 'tests') and st.session_state.tests else None
+    
     # First create the HTML version which handles translations properly
-    html_path = create_prescription_html(patient_data, diagnosis, prescription)
+    html_path = create_prescription_html(patient_data, diagnosis, prescription, tests)
     
     if not html_path:
         st.error("Failed to generate HTML prescription")
@@ -980,7 +1063,7 @@ def create_prescription(patient_data, diagnosis, prescription):
         if not wkhtmltopdf_path:
             st.warning("wkhtmltopdf not found. Installing it would improve PDF generation with RTL languages.")
             # Fall back to ReportLab method
-            return create_prescription_pdf_legacy(patient_data, diagnosis, prescription), html_path
+            return create_prescription_pdf_legacy(patient_data, diagnosis, prescription, tests), html_path
         
         # Convert HTML to PDF using wkhtmltopdf
         cmd = [
@@ -1002,12 +1085,12 @@ def create_prescription(patient_data, diagnosis, prescription):
         else:
             st.warning(f"HTML to PDF conversion failed: {result.stderr}")
             # Fall back to ReportLab method
-            return create_prescription_pdf_legacy(patient_data, diagnosis, prescription), html_path
+            return create_prescription_pdf_legacy(patient_data, diagnosis, prescription, tests), html_path
             
     except Exception as e:
         st.error(f"Error converting HTML to PDF: {str(e)}")
         # Fall back to ReportLab method
-        return create_prescription_pdf_legacy(patient_data, diagnosis, prescription), html_path
+        return create_prescription_pdf_legacy(patient_data, diagnosis, prescription, tests), html_path
 
 def get_pdf_display_link(pdf_path):
     """Generate HTML to display a PDF in an iframe"""
@@ -1541,7 +1624,7 @@ Showing the following symptoms:
             header = None
             for i, line in enumerate(lines):
                 line = line.strip()
-                if line.startswith("|") and i < len(lines)-1 and "-|-" in line:
+                if line.startswith("|") and i < len(lines)-1 and "-|-" in lines[i+1]:
                     # This is the header row
                     header = [col.strip() for col in line.strip("|").split("|")]
                     break
@@ -1551,7 +1634,7 @@ Showing the following symptoms:
                 for i, line in enumerate(lines):
                     if i > 0 and line.startswith("|") and not "-|-" in line:
                         columns = [col.strip() for col in line.strip("|").split("|")]
-                        if len(columns) >= 5:  # At least medication, dosage, frquency, duration, side-effects
+                        if len(columns) >= 5:  # At least medication, dosage, frequency, duration, side-effects
                             medications.append({
                                 "medication": columns[0],
                                 "dosage": columns[1],
@@ -1572,7 +1655,7 @@ Showing the following symptoms:
                 cleaned_line = re.sub(r'^[\s•\-\*\d\.]+', '', line).strip()
                 
                 # Skip very short lines or headers
-                if len(cleaned_line < 5 or ":" in cleaned_line[:15]):
+                if len(cleaned_line) < 5 or ":" in cleaned_line[:15]:
                     continue
                     
                 # Try to extract medication components
@@ -1692,6 +1775,56 @@ Showing the following symptoms:
             height=100, 
             help="Add any additional instructions, lifestyle recommendations, etc."
         )
+        
+        # Add test selection interface
+        st.subheader("Recommended Medical Tests")
+        common_tests = get_common_tests()
+        
+        # Initialize selected tests if not in session state
+        if "selected_tests" not in st.session_state:
+            st.session_state.selected_tests = []
+            
+        # Display previously selected tests
+        if st.session_state.selected_tests:
+            st.write("**Selected Tests:**")
+            for i, test in enumerate(st.session_state.selected_tests):
+                col1, col2 = st.columns([10, 1])
+                with col1:
+                    st.write(f"• {test}")
+                with col2:
+                    if st.button("✕", key=f"remove_test_{i}"):
+                        st.session_state.selected_tests.pop(i)
+                        st.experimental_rerun()
+        
+        # Create columns for test selection checkboxes
+        test_cols = st.columns(3)
+        
+        # Track newly selected tests
+        new_selected_tests = []
+        
+        for i, test in enumerate(common_tests):
+            col_idx = i % 3
+            with test_cols[col_idx]:
+                # Skip tests already selected
+                if test in st.session_state.selected_tests:
+                    continue
+                    
+                # Create checkbox for each test
+                if st.checkbox(test, key=f"test_{i}"):
+                    new_selected_tests.append(test)
+        
+        # Custom test input
+        custom_test = st.text_input("Add custom test", key="custom_test_input")
+        if st.button("Add Custom Test") and custom_test:
+            new_selected_tests.append(custom_test)
+            st.experimental_rerun()
+        
+        # Add new selected tests to session state
+        if new_selected_tests:
+            st.session_state.selected_tests.extend(new_selected_tests)
+            
+        # Update tests in the main session state
+        st.session_state.tests = st.session_state.selected_tests
         
         # Finalize prescription button
         if st.button("Generate Final Prescription"):
