@@ -92,6 +92,9 @@ def start_new_conversation():
     st.session_state.prescription = None
     st.session_state.final_prescription = False
     st.session_state.consultation_saved = False
+    # Clear the PDF paths when starting a new conversation
+    st.session_state.view_pdf_path = None
+    st.session_state.view_html_path = None
     # Reset the tests list for new consultations
     st.session_state.tests = []
     # Reset selected_tests to prevent tests from persisting between consultations
@@ -208,6 +211,7 @@ def get_common_tests():
     ]
 
 def generate_diagnosis(patient_data, symptoms):
+    """Generate a diagnosis based on patient data and symptoms without patient history in the main prompt"""
     # Fetch patient history
     patient_id = st.session_state.patient_id
     patient_history = get_patient_history(patient_id)
@@ -225,45 +229,13 @@ Showing the following symptoms:
 {', '.join(symptoms)}
 """
 
-    # Add patient history to the prompt if available
-    if (patient_history):
-        prompt += "\nPATIENT HISTORY FROM PREVIOUS VISITS:\n"
-        for i, record in enumerate(patient_history):
-            prompt += f"\nVisit Date: {record['date']}\n"
-            
-            # Include vital signs if available
-            if record.get('vital_signs'):
-                vs = record['vital_signs']
-                prompt += f"Vital Signs: Temperature {vs.get('temperature', 'N/A')}, "
-                prompt += f"BP {vs.get('blood_pressure', 'N/A')}\n"
-                
-            # Include pre-existing conditions if available
-            if record.get('pre_conditions'):
-                prompt += f"Pre-existing Conditions: {record['pre_conditions']}\n"
-                
-            # Include symptoms
-            if record.get('symptoms'):
-                prompt += f"Symptoms: {', '.join(record['symptoms'])}\n"
-                
-            prompt += f"Diagnosis: {record['diagnosis']}\n"
-            prompt += f"Prescription: {record['prescription']}\n"
-            
-            if i < len(patient_history) - 1:
-                prompt += "-" * 40 + "\n"  # Separator between records
-                
-        # Ask LLM to include history summary in response
-        prompt += """
-Based on the patient's history from previous visits, please include a brief summary 
-of their medical history as part of your analysis.
-"""
-
     # Complete the prompt with the expected response format
     prompt += """
 You must evaluate this case and provide a structured response in the EXACT format below.
 Follow this format precisely, with no deviations:
 
 PATIENT HISTORY SUMMARY:
-[Brief summary of the patient's previous visits and relevant medical history. If no history is available, write 'No previous records available'.]
+[Leave this section blank for now. It will be filled in separately.]
 
 DIAGNOSIS:
 1. [First most likely diagnosis]
@@ -283,13 +255,70 @@ TREATMENT PLAN:
 
 Be concise and clinical. Do not include any text outside this structure. Do not include any additional formatting."""
 
+    # Call the API to generate diagnosis
     response = requests.post(
         f"{BASE_URL}/generate-diagnosis",
         json={"prompt": prompt}
     )
     
     if response.status_code == 200:
-        return response.json()["diagnosis"]
+        diagnosis = response.json()["diagnosis"]
+        
+        # Now, if we have patient history, generate a separate history summary
+        if patient_history:
+            history_prompt = f"""You are a primary healthcare physician reviewing a patient's history. 
+The patient has the following previous consultations:
+
+"""
+            for i, record in enumerate(patient_history):
+                history_prompt += f"\nVisit Date: {record['date']}\n"
+                
+                # Include vital signs if available
+                if record.get('vital_signs'):
+                    vs = record['vital_signs']
+                    history_prompt += f"Vital Signs: Temperature {vs.get('temperature', 'N/A')}, "
+                    history_prompt += f"BP {vs.get('blood_pressure', 'N/A')}\n"
+                    
+                # Include pre-existing conditions if available
+                if record.get('pre_conditions'):
+                    history_prompt += f"Pre-existing Conditions: {record['pre_conditions']}\n"
+                    
+                # Include symptoms
+                if record.get('symptoms'):
+                    history_prompt += f"Symptoms: {', '.join(record['symptoms'])}\n"
+                    
+                history_prompt += f"Diagnosis: {record['diagnosis']}\n"
+                history_prompt += f"Prescription: {record['prescription']}\n"
+                
+                if i < len(patient_history) - 1:
+                    history_prompt += "-" * 40 + "\n"  # Separator between records
+            
+            history_prompt += """
+Based on the patient's history above, create a concise summary of their medical history.
+Highlight any patterns, recurring issues, or relevant information that could be important for
+the current diagnosis. Keep it brief and focused on medically relevant details only.
+"""
+            
+            # Get history summary
+            response = requests.post(
+                f"{BASE_URL}/generate-diagnosis",
+                json={"prompt": history_prompt}
+            )
+            
+            if response.status_code == 200:
+                history_summary = response.json()["diagnosis"]
+                
+                # Replace the placeholder in the diagnosis with the actual history summary
+                if "PATIENT HISTORY SUMMARY:" in diagnosis:
+                    parts = diagnosis.split("PATIENT HISTORY SUMMARY:")
+                    if len(parts) > 1:
+                        # Find the end of the history section
+                        history_end = parts[1].find("DIAGNOSIS:")
+                        if history_end > 0:
+                            # Replace the placeholder with the generated summary
+                            diagnosis = parts[0] + "PATIENT HISTORY SUMMARY:\n" + history_summary.strip() + "\n\n" + parts[1][history_end:]
+        
+        return diagnosis
     else:
         st.error("Failed to generate diagnosis")
         return None
@@ -342,6 +371,11 @@ Include dosage, frequency, and duration for each medication. Format your respons
 
 def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription, tests=None):
     try:
+        # Make sure patient_data is available
+        if not hasattr(st.session_state, 'patient_data') or not st.session_state.patient_data:
+            st.error("Cannot save consultation: patient data not available")
+            return False
+            
         # Get vital signs from patient data
         vital_signs = {
             "temperature": st.session_state.patient_data.get('temperature', ''),
@@ -1962,17 +1996,30 @@ Showing the following symptoms:
         # Modify the "End Consultation" button handler
         with col2:
             if st.button("End Consultation"):
+                # Generate PDF first if it hasn't been generated yet
+                if not hasattr(st.session_state, 'view_pdf_path') or not st.session_state.view_pdf_path:
+                    st.info("Generating prescription PDF before saving consultation...")
+                    # Generate PDF and HTML
+                    pdf_path, html_path = create_prescription(patient_data, diagnosis, prescription)
+                    
+                    if pdf_path and html_path:
+                        # Store the paths in session state
+                        st.session_state.view_pdf_path = pdf_path
+                        st.session_state.view_html_path = html_path
+                
                 # Only save if not already saved
                 if not st.session_state.consultation_saved:
-                    if save_consultation(
+                    save_result = save_consultation(
                         st.session_state.doctor_id,
                         st.session_state.patient_id,
                         st.session_state.symptoms if isinstance(st.session_state.symptoms, list) else
                             [s.strip() for s in st.session_state.symptoms.split(',')],
                         diagnosis,
                         prescription
-                    ):
-                        st.success("Consultation saved successfully")
+                    )
+                    
+                    if save_result:
+                        st.success("Consultation and prescription PDF saved successfully")
                         st.session_state.consultation_saved = True
                     else:
                         st.error("Failed to save consultation")
