@@ -1328,7 +1328,15 @@ def save_prescription_pdf(pdf_path, patient_id, consultation_id):
         return None
 
 def display_login():
-    st.title("Muawin - AI Assistant for Doctors")
+    # Add logo at the top of the login page
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        try:
+            st.image("Muawin_logo.png", width=100)
+        except:
+            st.write("Muawin")
+    with col2:
+        st.title("Muawin - AI Assistant for Doctors")
     
     with st.form("login_form"):
         username = st.text_input("Username", value="admin")
@@ -1343,7 +1351,15 @@ def display_login():
                 st.error("Invalid credentials")
 
 def display_main_interface():
-    st.title("Muawin - AI Assistant for Doctors")
+    # Add logo at the top of the page
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        try:
+            st.image("Muawin_logo.png", width=100)
+        except:
+            st.write("Muawin")
+    with col2:
+        st.title("Muawin - AI Assistant for Doctors")
     
     # Sidebar for session controls
     with st.sidebar:
@@ -1632,10 +1648,18 @@ Showing the following symptoms:
                         st.experimental_rerun()
     
     elif st.session_state.prescription and not st.session_state.final_prescription:
+        # Force scroll to top with an empty container and key
+        st.empty()
+        
+        # Important: Use st.markdown with anchor HTML at the very top to force browser to start at the top
+        st.markdown('<div id="top-anchor"></div>', unsafe_allow_html=True)
+        
+        # Main content starts here
         patient_data = st.session_state.patient_data
         diagnosis = st.session_state.diagnosis
         prescription = st.session_state.prescription
         
+        # Patient information at the top
         st.subheader("Patient Information")
         st.write(f"**Name:** {patient_data['name']}, **Age:** {patient_data['age']}, **Gender:** {patient_data['gender']}")
         
@@ -1810,7 +1834,7 @@ Showing the following symptoms:
             help="Add any additional instructions, lifestyle recommendations, etc."
         )
         
-        # Add test selection interface
+        # Tests section after the medications
         st.subheader("Recommended Medical Tests")
         common_tests = get_common_tests()
         
