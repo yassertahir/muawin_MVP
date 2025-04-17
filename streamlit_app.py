@@ -3,6 +3,8 @@ import os
 import threading
 import uvicorn
 import nest_asyncio
+import socket
+import time
 
 # Set page config as the first Streamlit command
 st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
@@ -14,16 +16,54 @@ nest_asyncio.apply()
 from init_for_cloud import ensure_db_initialized
 ensure_db_initialized()
 
+# Function to check if a port is in use
+def is_port_in_use(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
+
 # Function to start FastAPI server in a thread
 def start_fastapi_server():
-    # Run FastAPI on port 8000
-    uvicorn.run(fastapi_app, host="0.0.0.0", port=8000)
+    # Try to find an available port, starting with 8000
+    port = 8000
+    max_attempts = 10
+    
+    for attempt in range(max_attempts):
+        if not is_port_in_use(port):
+            try:
+                # Store the port in session state so other components can access it
+                st.session_state['api_port'] = port
+                # Run FastAPI on the available port
+                uvicorn.run(fastapi_app, host="0.0.0.0", port=port, log_level="warning")
+                break
+            except Exception as e:
+                st.error(f"Failed to start API server: {e}")
+                port += 1
+        else:
+            port += 1
+            if attempt == max_attempts - 1:
+                st.error("Could not find an available port to run the API server")
 
-# Import FastAPI app after setting page config
+# Import FastAPI app
 from api import app as fastapi_app
 
-# Start FastAPI server in a background thread
-threading.Thread(target=start_fastapi_server, daemon=True).start()
+# Create or get a session state key to track if the server has been started
+if 'server_started' not in st.session_state:
+    st.session_state['server_started'] = False
+    
+# Start FastAPI server in a background thread if not started already
+if not st.session_state['server_started']:
+    api_thread = threading.Thread(target=start_fastapi_server, daemon=True)
+    api_thread.start()
+    st.session_state['server_started'] = True
+    # Give the server a moment to start
+    time.sleep(1)
+
+# Set the BASE_URL in the session state so app.py can use it
+if 'api_port' in st.session_state:
+    st.session_state['BASE_URL'] = f"http://localhost:{st.session_state['api_port']}"
+else:
+    # Fallback if port detection failed
+    st.session_state['BASE_URL'] = "http://localhost:8000"
 
 # Import the app module but don't run its set_page_config
 import sys

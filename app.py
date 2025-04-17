@@ -19,10 +19,13 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from db_update_patients import update_patients_csv
 
 # Only configure the page if not already configured
-if not hasattr(st, '_is_page_config_set'):
-    st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
-    st._is_page_config_set = True
-
+# if not hasattr(st, '_is_page_config_set'):
+#     st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
+#     st._is_page_config_set = True
+if 'BASE_URL' in st.session_state:
+    BASE_URL = st.session_state['BASE_URL']
+else:
+    BASE_URL = st.secrets.get("BASE_URL", "http://localhost:8000")
 # Initialize session state variables if they don't exist
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
