@@ -1133,29 +1133,6 @@ def create_prescription(patient_data, diagnosis, prescription):
         # Fall back to ReportLab method
         return create_prescription_pdf_legacy(patient_data, diagnosis, prescription, tests), html_path
 
-def get_pdf_display_link(pdf_path):
-    """Generate HTML to display a PDF in an iframe"""
-    with open(pdf_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-    
-    pdf_display = f"""
-        <iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>
-    """
-    return pdf_display
-
-def get_html_display_content(html_path):
-    """Read HTML file and return its content for embedding in iframe"""
-    with open(html_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
-    
-    # Wrap the HTML content in an iframe with appropriate styling
-    iframe_content = f"""
-        <iframe srcdoc="{html_content.replace('"', '&quot;')}" 
-                style="width: 100%; height: 600px; border: 1px solid #ddd; border-radius: 5px;">
-        </iframe>
-    """
-    return iframe_content
-
 def create_modal_buttons(pdf_path, html_path, patient_name):
     """Create download button and in-page viewer instead of modal popup"""
     col1, col2 = st.columns(2)
@@ -1171,7 +1148,7 @@ def create_modal_buttons(pdf_path, html_path, patient_name):
                 PDFbyte = pdf_file.read()
                 
             st.download_button(
-                label="💾 Download Prescription",
+                label="💾 Download Prescription PDF",
                 data=PDFbyte,
                 file_name=f"prescription_{patient_name.replace(' ', '_')}.pdf",
                 mime="application/pdf"
@@ -1189,24 +1166,37 @@ def create_modal_buttons(pdf_path, html_path, patient_name):
                 mime="text/html"
             )
     
-    # Display PDF directly in the page (no modal needed)
-    st.markdown("### Prescription Preview")
-    pdf_display = get_pdf_display_link(pdf_path)
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    # Display HTML version directly as it has better browser compatibility
+    if html_path:
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        
+        st.markdown("### Prescription Preview (HTML Version)")
+        st.components.v1.html(html_content, height=600, scrolling=True)
     
-    # Add a print button
+    # Display PDF with warning about browser compatibility
+    st.markdown("### PDF Preview (May be blocked by some browsers)")
+    st.info("⚠️ PDF preview may be blocked by Chrome's security in Streamlit Cloud. If you can't see the PDF below, please use the download buttons above to view the prescription.")
+    
+    if pdf_path:
+        try:
+            with open(pdf_path, "rb") as f:
+                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+            
+            pdf_display = f"""
+                <iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>
+            """
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error displaying PDF: {e}")
+    
+    # Add print instructions
     st.markdown("""
-    <script>
-    function printPage() {
-        window.print();
-    }
-    </script>
-    <div style="text-align: center; margin: 20px 0;">
-        <button onclick="printPage()" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
-            🖨️ Print
-        </button>
-    </div>
-    """, unsafe_allow_html=True)
+    ### Printing Instructions
+    1. Download the PDF or HTML version using the buttons above
+    2. Open the downloaded file in your browser or PDF viewer
+    3. Use the print function in your browser/viewer
+    """)
 
 def parse_medication_details(med_line):
     """Parse medication details and properly separate side effects"""
@@ -1334,6 +1324,25 @@ def save_prescription_pdf(pdf_path, patient_id, consultation_id):
         st.error(f"Failed to save prescription PDF: {str(e)}")
         return None
 
+def clear_consultation_data():
+    """Clear all consultation records from database for demo purposes"""
+    if st.session_state.authenticated:
+        try:
+            response = requests.post(f"{BASE_URL}/clear-consultations")
+            if response.status_code == 200:
+                result = response.json()
+                st.success(f"{result['message']}")
+                return True
+            else:
+                st.error(f"Failed to clear database: {response.text}")
+                return False
+        except Exception as e:
+            st.error(f"Error clearing database: {str(e)}")
+            return False
+    else:
+        st.error("You must be logged in to clear the database")
+        return False
+
 def display_login():
     # Add logo at the top of the login page
     col1, col2 = st.columns([1, 3])
@@ -1372,6 +1381,7 @@ def display_main_interface():
     with st.sidebar:
         st.button("Logout", on_click=logout)
         st.button("Start New Consultation", on_click=start_new_conversation)
+        st.button("Clear Database", on_click=clear_consultation_data)
     
     if st.session_state.patient_id is None:
         # Patient selection

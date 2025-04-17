@@ -375,6 +375,40 @@ def update_patient(patient_id: str, pre_conditions: str):
     finally:
         conn.close()
 
+@app.post("/clear-consultations")
+def clear_consultations():
+    """Clear all records from the consultations table for demo purposes"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Keep a count of how many records were deleted
+        cursor.execute("SELECT COUNT(*) FROM consultations")
+        count = cursor.fetchone()[0]
+        
+        # Delete all records from consultations table
+        cursor.execute("DELETE FROM consultations")
+        
+        # Also remove any prescription PDFs
+        import os
+        import glob
+        pdf_dir = "data/prescription"
+        if os.path.exists(pdf_dir):
+            files = glob.glob(os.path.join(pdf_dir, "*.pdf"))
+            for f in files:
+                try:
+                    os.remove(f)
+                except Exception as e:
+                    print(f"Error removing file {f}: {e}")
+        
+        conn.commit()
+        return {"status": "success", "message": f"Cleared {count} consultation records and associated PDFs"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
 # Run server with: uvicorn api:app --reload
 if __name__ == "__main__":
     import uvicorn
