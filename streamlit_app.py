@@ -3,7 +3,9 @@ import os
 import threading
 import uvicorn
 import nest_asyncio
-from api import app as fastapi_app
+
+# Set page config as the first Streamlit command
+st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
 
 # Apply nest_asyncio to enable running asyncio event loops inside Jupyter/IPython
 nest_asyncio.apply()
@@ -17,8 +19,16 @@ def start_fastapi_server():
     # Run FastAPI on port 8000
     uvicorn.run(fastapi_app, host="0.0.0.0", port=8000)
 
+# Import FastAPI app after setting page config
+from api import app as fastapi_app
+
 # Start FastAPI server in a background thread
 threading.Thread(target=start_fastapi_server, daemon=True).start()
 
-# Import and run the Streamlit app
-import app  # This imports and runs your existing app.py
+# Import the app module but don't run its set_page_config
+import sys
+import importlib.util
+spec = importlib.util.spec_from_file_location("app_module", "app.py")
+app_module = importlib.util.module_from_spec(spec)
+app_module.st = st  # Pass our st instance with config already set
+spec.loader.exec_module(app_module)

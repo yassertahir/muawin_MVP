@@ -18,8 +18,10 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 # Import our new function for updating patients.csv
 from db_update_patients import update_patients_csv
 
-# Configure the page
-st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
+# Only configure the page if not already configured
+if not hasattr(st, '_is_page_config_set'):
+    st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
+    st._is_page_config_set = True
 
 # Initialize session state variables if they don't exist
 if "authenticated" not in st.session_state:
