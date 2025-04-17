@@ -11,10 +11,19 @@ from langchain.agents import load_tools, initialize_agent, AgentType
 from langchain.prompts import PromptTemplate
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from dotenv import load_dotenv
+import streamlit as st
 from googletrans import Translator
 
-load_dotenv()
+# Use Streamlit secrets if available, otherwise try to load from .env
+try:
+    # When running in Streamlit Cloud
+    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+    # If you have a SerpAPI key, uncomment this:
+    # os.environ["SERPAPI_API_KEY"] = st.secrets.get("SERPAPI_API_KEY", "")
+except:
+    # When running locally with .env file
+    from dotenv import load_dotenv
+    load_dotenv()
 
 # Initialize FastAPI
 app = FastAPI()
@@ -30,9 +39,6 @@ app.add_middleware(
 
 # Database path
 DATABASE_PATH = "muawin.db"
-
-# OpenAI API key
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "your-api-key")
 
 # Initialize LangChain components
 def get_llm():

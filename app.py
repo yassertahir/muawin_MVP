@@ -54,7 +54,9 @@ if "consultation_saved" not in st.session_state:
     st.session_state.consultation_saved = False
 
 # Base URL for API
-BASE_URL = "http://localhost:8000"
+# Update to use Streamlit secrets or environment variable
+import os
+BASE_URL = st.secrets.get("BASE_URL", "http://localhost:8000")
 
 def login(username, password):
     response = requests.post(
