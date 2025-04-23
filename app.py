@@ -8,6 +8,7 @@ import os
 import tempfile
 from fpdf import FPDF
 import base64
+import re
 from streamlit_modal import Modal
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -17,6 +18,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 # Import our new function for updating patients.csv
 from db_update_patients import update_patients_csv
+import shutil  # For file operations
+import subprocess  # For running wkhtmltopdf
 
 # Only configure the page if not already configured
 # if not hasattr(st, '_is_page_config_set'):
@@ -57,6 +60,8 @@ if "view_html_path" not in st.session_state:
     st.session_state.view_html_path = None
 if "consultation_saved" not in st.session_state:
     st.session_state.consultation_saved = False
+if "referrals" not in st.session_state:
+    st.session_state.referrals = []
 
 # Base URL for API
 # Update to use Streamlit secrets or environment variable
@@ -1343,6 +1348,70 @@ def clear_consultation_data():
         st.error("You must be logged in to clear the database")
         return False
 
+def get_specialist_categories():
+    """Get a list of all specialist categories from the API"""
+    try:
+        response = requests.get(f"{BASE_URL}/specialist-categories")
+        if response.status_code == 200:
+            return response.json()["categories"]
+        else:
+            st.warning(f"Could not fetch specialist categories: {response.status_code}")
+            return []
+    except Exception as e:
+        st.warning(f"Error fetching specialist categories: {str(e)}")
+        return []
+
+def get_specialists_by_category(category):
+    """Get a list of specialists filtered by category"""
+    try:
+        response = requests.get(f"{BASE_URL}/specialists?category={category}")
+        if response.status_code == 200:
+            return response.json()["specialists"]
+        else:
+            st.warning(f"Could not fetch specialists: {response.status_code}")
+            return []
+    except Exception as e:
+        st.warning(f"Error fetching specialists: {str(e)}")
+        return []
+
+def get_all_specialists():
+    """Get a list of all specialists"""
+    try:
+        response = requests.get(f"{BASE_URL}/specialists")
+        if response.status_code == 200:
+            return response.json()["specialists"]
+        else:
+            st.warning(f"Could not fetch specialists: {response.status_code}")
+            return []
+    except Exception as e:
+        st.warning(f"Error fetching specialists: {str(e)}")
+        return []
+
+def save_referral(doctor_id, patient_id, specialist_id, reason):
+    """Save a referral to the database"""
+    try:
+        data = {
+            "doctor_id": doctor_id,
+            "patient_id": patient_id,
+            "specialist_id": specialist_id,
+            "reason": reason,
+            "date": datetime.now().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BASE_URL}/save-referral",
+            json=data
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Failed to save referral: {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"Error saving referral: {str(e)}")
+        return None
+
 def display_login():
     # Add logo at the top of the login page
     col1, col2 = st.columns([1, 3])
@@ -1900,6 +1969,104 @@ Showing the following symptoms:
             
         # Update tests in the main session state
         st.session_state.tests = st.session_state.selected_tests
+        
+        # Specialist Referrals section
+        st.subheader("Specialist Referrals")
+        
+        # Initialize referrals in session state if it doesn't exist
+        if "referrals" not in st.session_state:
+            st.session_state.referrals = []
+            
+        # Display previously added referrals
+        if st.session_state.referrals:
+            st.write("**Selected Referrals:**")
+            for i, referral in enumerate(st.session_state.referrals):
+                col1, col2 = st.columns([10, 1])
+                with col1:
+                    specialist = referral.get("specialist", {})
+                    st.write(f"• {specialist.get('name', 'Unknown')} ({specialist.get('category', 'Unknown')}) - {referral.get('reason', 'No reason specified')}")
+                with col2:
+                    if st.button("✕", key=f"remove_referral_{i}"):
+                        st.session_state.referrals.pop(i)
+                        st.experimental_rerun()
+        
+        # Get specialist categories and create a dropdown
+        specialist_categories = get_specialist_categories()
+        
+        if specialist_categories:
+            selected_category = st.selectbox(
+                "Select Specialist Category", 
+                [""] + specialist_categories,
+                key="specialist_category"
+            )
+            
+            if selected_category:
+                # Get specialists in the selected category
+                specialists = get_specialists_by_category(selected_category)
+                
+                if specialists:
+                    # Create a dropdown for selecting a specialist
+                    selected_specialist_id = st.selectbox(
+                        "Select Specialist",
+                        [""] + [(f"{s['id']}: {s['name']} - {s['hospital']}") for s in specialists],
+                        key="specialist_select"
+                    )
+                    
+                    if selected_specialist_id and ":" in selected_specialist_id:
+                        # Extract the specialist ID from the selection
+                        specialist_id = int(selected_specialist_id.split(":")[0])
+                        
+                        # Find the specialist in the list
+                        selected_specialist = next((s for s in specialists if s['id'] == specialist_id), None)
+                        
+                        if selected_specialist:
+                            # Show specialist details
+                            st.write(f"**Hospital:** {selected_specialist['hospital']}")
+                            st.write(f"**Contact:** {selected_specialist['contact']}")
+                            st.write(f"**Availability:** {selected_specialist['availability']}")
+                            
+                            # Add reason for referral
+                            referral_reason = st.text_area(
+                                "Reason for Referral", 
+                                height=100,
+                                key="referral_reason"
+                            )
+                            
+                            # Button to add the referral
+                            if st.button("Add Referral"):
+                                if referral_reason:
+                                    # Add the referral to session state
+                                    st.session_state.referrals.append({
+                                        "specialist_id": specialist_id,
+                                        "specialist": selected_specialist,
+                                        "reason": referral_reason
+                                    })
+                                    st.experimental_rerun()
+                                else:
+                                    st.warning("Please provide a reason for the referral")
+                else:
+                    st.info(f"No specialists found in category: {selected_category}")
+        else:
+            st.warning("No specialist categories found. Please check the database setup.")
+            
+            # Allow for manual referral entry as fallback
+            manual_referral = st.text_area(
+                "Manual Referral Note", 
+                height=100,
+                key="manual_referral",
+                help="Enter manual referral details if specialist selection is not working"
+            )
+            
+            if st.button("Add Manual Referral"):
+                if manual_referral:
+                    st.session_state.referrals.append({
+                        "specialist_id": 0,  # Placeholder ID
+                        "specialist": {"name": "Manual Referral", "category": "Other"},
+                        "reason": manual_referral
+                    })
+                    st.experimental_rerun()
+                else:
+                    st.warning("Please provide referral details")
         
         # Finalize prescription button
         if st.button("Generate Final Prescription"):

@@ -49,6 +49,18 @@ def main():
         )
         ''')
         
+        # Create specialists table
+        cursor.execute('''
+        CREATE TABLE specialists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            hospital TEXT,
+            contact TEXT,
+            availability TEXT
+        )
+        ''')
+        
         # Insert default admin user
         cursor.execute('''
         INSERT INTO doctors (username, password, name, email, specialization)
@@ -68,6 +80,35 @@ def main():
         INSERT INTO patients (id, name, age, gender, temperature, blood_pressure, pre_conditions)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', sample_patients)
+        
+        # Generate sample specialists
+        sample_specialists = [
+            ('Dr. Asim Riaz', 'Cardiologist', 'Punjab Institute of Cardiology, Lahore', '+92-42-99200031', 'Mon-Fri, 9am-5pm'),
+            ('Dr. Farah Khan', 'Cardiologist', 'Aga Khan University Hospital, Karachi', '+92-21-34930051', 'Tue-Sat, 10am-6pm'),
+            ('Dr. Imran Yousuf', 'Neurologist', 'Shifa International Hospital, Islamabad', '+92-51-8464646', 'Mon-Thu, 9am-4pm'),
+            ('Dr. Saima Chaudhry', 'Neurologist', 'Doctors Hospital, Lahore', '+92-42-35862493', 'Wed-Sun, 11am-7pm'),
+            ('Dr. Tariq Mahmood', 'Orthopedic Surgeon', 'Liaquat National Hospital, Karachi', '+92-21-34412754', 'Mon-Fri, 8am-2pm'),
+            ('Dr. Hina Shahid', 'Orthopedic Surgeon', 'Mayo Hospital, Lahore', '+92-42-99211129', 'Tue-Sat, 9am-3pm'),
+            ('Dr. Adeel Ahmed', 'Dermatologist', 'Pakistan Institute of Medical Sciences, Islamabad', '+92-51-9261170', 'Mon-Wed, 10am-4pm'),
+            ('Dr. Naila Jabeen', 'Dermatologist', 'Jinnah Hospital, Lahore', '+92-42-99231400', 'Thu-Sun, 11am-5pm'),
+            ('Dr. Zubair Ali', 'Gastroenterologist', 'Aga Khan University Hospital, Karachi', '+92-21-34930051', 'Mon-Fri, 9am-5pm'),
+            ('Dr. Saba Karim', 'Gastroenterologist', 'Shaukat Khanum Memorial Hospital, Lahore', '+92-42-35945100', 'Tue-Sat, 10am-6pm'),
+            ('Dr. Naveed Khan', 'Endocrinologist', 'Shifa International Hospital, Islamabad', '+92-51-8464646', 'Mon-Thu, 9am-4pm'),
+            ('Dr. Amina Iqbal', 'Endocrinologist', 'Services Hospital, Lahore', '+92-42-99203402', 'Wed-Sun, 11am-7pm'),
+            ('Dr. Salman Malik', 'Ophthalmologist', 'Al-Shifa Trust Eye Hospital, Rawalpindi', '+92-51-5487820', 'Mon-Fri, 8am-2pm'),
+            ('Dr. Rabia Aziz', 'Ophthalmologist', 'Mayo Hospital, Lahore', '+92-42-99211129', 'Tue-Sat, 9am-3pm'),
+            ('Dr. Kamran Sheikh', 'ENT Specialist', 'Pakistan Institute of Medical Sciences, Islamabad', '+92-51-9261170', 'Mon-Wed, 10am-4pm'),
+            ('Dr. Fariha Tahir', 'ENT Specialist', 'Jinnah Hospital, Lahore', '+92-42-99231400', 'Thu-Sun, 11am-5pm'),
+            ('Dr. Bilal Raza', 'Psychiatrist', 'Aga Khan University Hospital, Karachi', '+92-21-34930051', 'Mon-Fri, 9am-5pm'),
+            ('Dr. Sadia Anwar', 'Psychiatrist', 'Punjab Institute of Mental Health, Lahore', '+92-42-99210896', 'Tue-Sat, 10am-6pm'),
+            ('Dr. Omar Farooq', 'Nephrologist', 'Shifa International Hospital, Islamabad', '+92-51-8464646', 'Mon-Thu, 9am-4pm'),
+            ('Dr. Nadia Hamid', 'Nephrologist', 'Doctors Hospital, Lahore', '+92-42-35862493', 'Wed-Sun, 11am-7pm')
+        ]
+        
+        cursor.executemany('''
+        INSERT INTO specialists (name, category, hospital, contact, availability)
+        VALUES (?, ?, ?, ?, ?)
+        ''', sample_specialists)
         
         # Create patients.csv file for dropdown selection
         patients_df = pd.DataFrame([{'patientId': p[0]} for p in sample_patients])

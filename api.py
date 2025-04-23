@@ -81,11 +81,19 @@ class ConsultationRequest(BaseModel):
     prescription: str
     tests: Optional[List[str]] = None  # List of tests to be performed
     prescription_pdf: Optional[str] = None  # Path to PDF file
+    referrals: Optional[List[dict]] = None  # List of specialist referrals
     date: str
 
 class TranslationRequest(BaseModel):
     text: str
     target_language: str
+
+class ReferralRequest(BaseModel):
+    doctor_id: int
+    patient_id: str
+    specialist_id: int
+    reason: str
+    date: str
 
 # Helper function to create prescription PDF
 def create_prescription_pdf(patient_data, diagnosis, prescription, tests=None):
@@ -403,6 +411,113 @@ def clear_consultations():
         
         conn.commit()
         return {"status": "success", "message": f"Cleared {count} consultation records and associated PDFs"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/specialist-categories")
+def get_specialist_categories():
+    """Get all unique specialist categories"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT DISTINCT category FROM specialists ORDER BY category")
+        categories = [row["category"] for row in cursor.fetchall()]
+        return {"categories": categories}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/specialists")
+def get_specialists(category: Optional[str] = None):
+    """Get all specialists, optionally filtered by category"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if category:
+            cursor.execute(
+                "SELECT * FROM specialists WHERE category = ? ORDER BY name",
+                (category,)
+            )
+        else:
+            cursor.execute("SELECT * FROM specialists ORDER BY category, name")
+            
+        specialists = []
+        for row in cursor.fetchall():
+            specialists.append({
+                "id": row["id"],
+                "name": row["name"],
+                "category": row["category"],
+                "hospital": row["hospital"],
+                "contact": row["contact"],
+                "availability": row["availability"]
+            })
+        return {"specialists": specialists}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/specialist/{specialist_id}")
+def get_specialist(specialist_id: int):
+    """Get a specific specialist by ID"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            "SELECT * FROM specialists WHERE id = ?",
+            (specialist_id,)
+        )
+        row = cursor.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Specialist not found")
+            
+        specialist = {
+            "id": row["id"],
+            "name": row["name"],
+            "category": row["category"],
+            "hospital": row["hospital"],
+            "contact": row["contact"],
+            "availability": row["availability"]
+        }
+        return specialist
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post("/save-referral")
+def save_referral(request: ReferralRequest):
+    """Save a specialist referral"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            """
+            INSERT INTO referrals (
+                doctor_id, patient_id, specialist_id, reason, referral_date
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                request.doctor_id,
+                request.patient_id,
+                request.specialist_id,
+                request.reason,
+                request.date
+            )
+        )
+        # Get the ID of the inserted record
+        referral_id = cursor.lastrowid
+        conn.commit()
+        return {"status": "success", "referral_id": referral_id}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
