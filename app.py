@@ -403,6 +403,7 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription, 
             "diagnosis": diagnosis,
             "prescription": prescription,
             "tests": tests if tests else st.session_state.tests,  # Use provided tests or from session state
+            "referrals": st.session_state.referrals if hasattr(st.session_state, 'referrals') else [],  # Add referrals from session state
             "date": datetime.now().isoformat()
         }
         
@@ -447,6 +448,17 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription, 
                         st.error(f"Failed to update prescription PDF path: {str(e)}")
                     finally:
                         conn.close()
+            
+            # Also save individual referrals to the referrals table
+            if hasattr(st.session_state, 'referrals') and st.session_state.referrals:
+                for referral in st.session_state.referrals:
+                    save_referral(
+                        doctor_id,
+                        patient_id,
+                        referral.get("specialist_id", 0),
+                        referral.get("reason", "")
+                    )
+                st.success(f"Saved {len(st.session_state.referrals)} referrals to database")
             
             return True
         else:
@@ -634,6 +646,31 @@ def create_prescription_pdf(patient_data, diagnosis, prescription, tests=None):
     
     story.append(Spacer(1, 12))
     
+    # Add referrals section if there are any referrals in session state
+    if hasattr(st.session_state, 'referrals') and st.session_state.referrals:
+        story.append(Paragraph("<b>Referrals:</b>", styles['Heading3']))
+        if needs_translation:
+            referrals_label = translate_text("Referrals", patient_language)
+            if referrals_label:
+                story.append(Paragraph(f"({referrals_label})", styles['Translation']))
+        
+        # Add each referral
+        for referral in st.session_state.referrals:
+            specialist = referral.get('specialist', {})
+            specialist_name = specialist.get('name', 'Unknown Specialist')
+            specialist_category = specialist.get('category', 'Unknown Category')
+            reason = referral.get('reason', 'No reason specified')
+            
+            referral_text = f"{specialist_name} ({specialist_category}) - {reason}"
+            story.append(Paragraph(f"• {referral_text}", styles['Normal']))
+            
+            if needs_translation:
+                referral_translation = translate_text(referral_text, patient_language)
+                if referral_translation:
+                    story.append(Paragraph(f"({referral_translation})", styles['Translation']))
+        
+        story.append(Spacer(1, 12))
+    
     # Prescription
     story.append(Paragraph("<b>Prescription:</b>", styles['Heading3']))
     if needs_translation:
@@ -759,6 +796,16 @@ def create_prescription_pdf(patient_data, diagnosis, prescription, tests=None):
             pdf.cell(0, 10, "Diagnosis:", 0, 1)
             pdf.set_font('Arial', '', 12)
             pdf.multi_cell(0, 8, diagnosis.encode('ascii', 'replace').decode('ascii'))
+            
+            # Add referrals if present
+            if hasattr(st.session_state, 'referrals') and st.session_state.referrals:
+                pdf.ln(5)
+                pdf.set_font('Arial', 'B', 14)
+                pdf.cell(0, 10, "Referrals:", 0, 1)
+                pdf.set_font('Arial', '', 12)
+                for referral in st.session_state.referrals:
+                    specialist = referral.get('specialist', {})
+                    pdf.multi_cell(0, 8, f"- {specialist.get('name', 'Unknown')} ({specialist.get('category', 'Unknown')}) - {referral.get('reason', 'No reason specified')}")
             
             pdf.ln(5)
             pdf.set_font('Arial', 'B', 14)
@@ -934,6 +981,39 @@ def create_prescription_html(patient_data, diagnosis, prescription, tests=None):
             html.append(f"        <div class='translation content {direction_class}'>{nl2br(diagnosis_translation)}</div>")
     
     html.append("    </div>")
+    
+    # Add referrals section if there are any referrals in session state
+    if hasattr(st.session_state, 'referrals') and st.session_state.referrals:
+        html.append("    <div class='section'>")
+        html.append("        <div class='header'>Referrals:</div>")
+        if needs_translation:
+            referrals_label = translate_text("Referrals", patient_language)
+            if referrals_label:
+                direction_class = "rtl" if is_rtl else "ltr"
+                html.append(f"        <div class='translation {direction_class}'>{referrals_label}</div>")
+        
+        html.append("        <div class='content'>")
+        html.append("            <ul>")
+        
+        # Add each referral
+        for referral in st.session_state.referrals:
+            specialist = referral.get('specialist', {})
+            specialist_name = specialist.get('name', 'Unknown Specialist')
+            specialist_category = specialist.get('category', 'Unknown Category')
+            reason = referral.get('reason', 'No reason specified')
+            
+            referral_text = f"{specialist_name} ({specialist_category}) - {reason}"
+            html.append(f"                <li>{referral_text}</li>")
+            
+            if needs_translation:
+                referral_translation = translate_text(referral_text, patient_language)
+                if referral_translation:
+                    direction_class = "rtl" if is_rtl else "ltr"
+                    html.append(f"                <div class='translation {direction_class}'>({referral_translation})</div>")
+        
+        html.append("            </ul>")
+        html.append("        </div>")
+        html.append("    </div>")
     
     # Prescription section
     html.append("    <div class='section'>")

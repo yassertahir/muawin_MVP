@@ -330,8 +330,9 @@ def save_consultation(request: ConsultationRequest):
             """
             INSERT INTO consultations (
                 doctor_id, patient_id, symptoms, vital_signs,
-                diagnosis, prescription, prescription_pdf, consultation_date, tests
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                diagnosis, prescription, prescription_pdf, consultation_date, 
+                tests, referrals
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.doctor_id,
@@ -342,7 +343,8 @@ def save_consultation(request: ConsultationRequest):
                 request.prescription,
                 request.prescription_pdf,
                 request.date,
-                json.dumps(request.tests) if request.tests else None
+                json.dumps(request.tests) if request.tests else None,
+                json.dumps(request.referrals) if request.referrals else None
             )
         )
         # Get the ID of the inserted record
