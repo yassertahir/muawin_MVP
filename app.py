@@ -1869,11 +1869,12 @@ def display_main_interface():
                 # Update the diagnosis
                 st.session_state.diagnosis = final_diagnosis
                 
-                # Generate prescription but store it in a temporary state variable
+                # Generate prescription and set it directly in the session state
                 raw_prescription = generate_prescription(final_diagnosis, patient_data)
                 if raw_prescription:
-                    # Store in temporary session state for confirmation
-                    st.session_state.temp_raw_prescription = raw_prescription
+                    # Skip the confirmation step and go straight to prescription editing
+                    st.session_state.prescription = raw_prescription
+                    st.session_state.final_prescription = False
                     st.experimental_rerun()
         else:
             # If no diagnoses could be extracted, just provide buttons for the next steps
@@ -1881,11 +1882,12 @@ def display_main_interface():
             
             with col1:
                 if st.button("Accept Diagnosis"):
-                    # Generate prescription but store it in a temporary state variable
+                    # Generate prescription and set it directly in the session state
                     raw_prescription = generate_prescription(st.session_state.diagnosis, patient_data)
                     if raw_prescription:
-                        # Store in temporary session state for confirmation
-                        st.session_state.temp_raw_prescription = raw_prescription
+                        # Skip the confirmation step and go straight to prescription editing
+                        st.session_state.prescription = raw_prescription
+                        st.session_state.final_prescription = False
                         st.experimental_rerun()
     
     elif st.session_state.prescription and not st.session_state.final_prescription:
