@@ -391,9 +391,9 @@ Ensure all columns are properly filled with relevant information."""
     if response.status_code == 200:
         raw_prescription = response.json()["prescription"]
         
-        # Debug: Let's look at the raw prescription text
-        with st.expander("Debug: Raw Prescription Text"):
-            st.code(raw_prescription)
+        # Display the raw prescription directly on the page
+        st.subheader("Raw Prescription Text (Debug)")
+        st.code(raw_prescription)
         
         return raw_prescription
     else:
