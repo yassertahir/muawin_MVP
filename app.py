@@ -1824,7 +1824,12 @@ def display_main_interface():
                 # Update the diagnosis and move to prescription
                 st.session_state.diagnosis = final_diagnosis
                 prescription = generate_prescription(final_diagnosis, patient_data)
+                
+                # Add debug output for raw prescription text
                 if prescription:
+                    with st.expander("Debug: Raw Prescription Text", expanded=True):
+                        st.code(prescription)
+                    
                     st.session_state.prescription = prescription
                     st.experimental_rerun()
         else:
@@ -1834,35 +1839,13 @@ def display_main_interface():
             with col1:
                 if st.button("Accept Diagnosis"):
                     prescription = generate_prescription(st.session_state.diagnosis, patient_data)
+                    
+                    # Add debug output for raw prescription text
                     if prescription:
+                        with st.expander("Debug: Raw Prescription Text", expanded=True):
+                            st.code(prescription)
+                        
                         st.session_state.prescription = prescription
-                        st.experimental_rerun()
-            
-            with col2:
-                if st.button("Regenerate Diagnosis"):
-                    doctor_comments = st.text_area("Your comments for regeneration")
-                    original_prompt = f"""You are a primary healthcare physician in Pakistan. A patient with following details:
-Name: {patient_data['name']}
-Age: {patient_data['age']}
-Gender: {patient_data['gender']}
-Temperature: {patient_data['temperature']}
-Blood Pressure: {patient_data['blood_pressure']}
-Pre-existing Conditions: {patient_data['pre_conditions']}
-
-Showing the following symptoms:
-{', '.join(symptoms)}"""
-
-                    if doctor_comments and st.button("Submit Comments"):
-                        new_diagnosis = regenerate_diagnosis(original_prompt, doctor_comments)
-                        if new_diagnosis:
-                            st.session_state.diagnosis = new_diagnosis
-                            st.experimental_rerun()
-            
-            with col3:
-                if st.button("Manual Diagnosis"):
-                    manual_diagnosis = st.text_area("Enter your diagnosis")
-                    if manual_diagnosis and st.button("Confirm Manual Diagnosis"):
-                        st.session_state.diagnosis = manual_diagnosis
                         st.experimental_rerun()
     
     elif st.session_state.prescription and not st.session_state.final_prescription:
