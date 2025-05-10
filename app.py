@@ -1955,8 +1955,10 @@ def display_main_interface():
                 # Map positions based on header names
                 for i, col in enumerate(header):
                     col_lower = col.lower()
-                    if "medication" in col_lower or "name" in col_lower:
+                    if ("medication" in col_lower and "name" in col_lower) or "medication name" in col_lower:
                         field_positions["medication"] = i
+                    elif "medication" in col_lower and "interaction" in col_lower:
+                        field_positions["interactions"] = i
                     elif "dosage" in col_lower or "dose" in col_lower:
                         field_positions["dosage"] = i
                     elif "frequency" in col_lower:
