@@ -1311,7 +1311,7 @@ def create_modal_buttons(pdf_path, html_path, patient_name):
     """)
 
 def parse_medication_details(med_line):
-    """Parse medication details and properly separate side effects"""
+    """Parse medication details and properly separate side effects, interactions, and pregnancy safety"""
     # Remove bullet point if present
     if med_line.startswith("• "):
         med_line = med_line[2:].strip()
@@ -1327,69 +1327,83 @@ def parse_medication_details(med_line):
         "pregnancy_safety": ""
     }
     
-    # Check for specific labeled sections in the medication line
+    # First, try to find labeled sections for specialized fields (more reliable)
     labeled_fields = {
-        "Side effects:": "side_effects",
         "Side Effects:": "side_effects",
-        "Interactions:": "interactions",
-        "Medication Interactions:": "interactions",
+        "Side effects:": "side_effects",
+        "Medication Interactions:": "interactions", 
         "Drug Interactions:": "interactions",
+        "Interactions:": "interactions",
         "Pregnancy Safety:": "pregnancy_safety",
+        "Pregnancy safety:": "pregnancy_safety",
+        "Pregnancy Category:": "pregnancy_safety",
         "Pregnancy:": "pregnancy_safety"
     }
     
-    # Extract labeled content from the medication line
+    # Handle each specialized field separately
     remaining_line = med_line
     for label, field in labeled_fields.items():
         if label in remaining_line:
             parts = remaining_line.split(label, 1)
-            remaining_line = parts[0].strip()
+            before_text = parts[0].strip()
+            after_text = parts[1].strip()
             
-            # If there's another label in the extracted content, only take what's before it
-            content = parts[1].strip()
-            next_label_pos = float('inf')
-            for next_label in labeled_fields.keys():
-                if next_label in content:
-                    pos = content.find(next_label)
-                    if pos < next_label_pos:
+            # Find the next label if any
+            next_label_pos = len(after_text)
+            next_label = None
+            for next_label_candidate in labeled_fields.keys():
+                if next_label_candidate in after_text:
+                    pos = after_text.find(next_label_candidate)
+                    if 0 <= pos < next_label_pos:
                         next_label_pos = pos
+                        next_label = next_label_candidate
             
-            if next_label_pos < float('inf'):
-                med[field] = content[:next_label_pos].strip()
-                remaining_line += " " + content[next_label_pos:].strip()
+            if next_label:
+                # Extract content up to the next label
+                med[field] = after_text[:next_label_pos].strip()
+                # Keep the rest (including the next label) for further processing
+                remaining_line = before_text + " " + after_text[next_label_pos:]
             else:
-                med[field] = content
+                # This is the last labeled section
+                med[field] = after_text.strip()
+                remaining_line = before_text
     
-    # Check for opening parenthesis anywhere in the remaining text for unlabeled content
-    paren_index = remaining_line.find("(")
-    if paren_index > 0:
-        # There's an opening parenthesis - this might be side effects
-        # Only process if there's a closing parenthesis too
-        if ")" in remaining_line[paren_index:]:
-            close_paren = remaining_line.find(")", paren_index)
-            # Extract content inside parentheses if not already captured as side effects
-            if not med["side_effects"]:
-                med["side_effects"] = remaining_line[paren_index+1:close_paren].strip()
-            # Remove the parenthetical phrase
-            remaining_line = remaining_line[:paren_index].strip() + " " + remaining_line[close_paren+1:].strip()
+    # Now parse the remaining line for the basic medication information
+    # Simple case: "Medication - Dosage - Frequency - Duration" format
+    parts = [p.strip() for p in remaining_line.split(" - ")]
     
-    # Parse the remaining parts for basic medication information
-    parts = remaining_line.split(" - ")
-    
-    # Assign parts to appropriate fields
-    if len(parts) > 0:
+    if len(parts) >= 1:
         med["medication"] = parts[0].strip()
-    if len(parts) > 1:
+    if len(parts) >= 2:
         med["dosage"] = parts[1].strip()
-    if len(parts) > 2:
+    if len(parts) >= 3:
         med["frequency"] = parts[2].strip()
-    if len(parts) > 3:
+    if len(parts) >= 4:
         med["duration"] = parts[3].strip()
     
-    # Final cleanup - remove any remaining parentheses from all fields
-    for field in ["medication", "dosage", "frequency", "duration"]:
-        if "(" in med[field] or ")" in med[field]:
+    # Check for side effects in parentheses if not already found
+    if not med["side_effects"]:
+        sidx = remaining_line.find("(")
+        if sidx > 0:
+            eidx = remaining_line.find(")", sidx)
+            if eidx > sidx:
+                possible_side_effects = remaining_line[sidx+1:eidx].strip()
+                # Only use if it looks like side effects
+                if len(possible_side_effects) > 5 and "side" in possible_side_effects.lower():
+                    med["side_effects"] = possible_side_effects
+    
+    # Final clean up - remove parentheses and extra formatting
+    for field in med:
+        if med[field]:
+            # Remove unnecessary parentheses and extra spaces
             med[field] = med[field].replace("(", "").replace(")", "").strip()
+            # If the field accidentally starts with a field label, remove it
+            for label in labeled_fields:
+                if med[field].startswith(label):
+                    med[field] = med[field][len(label):].strip()
+    
+    # Debug the parsing results
+    print(f"PARSED: {med_line} -> {med}")
     
     return med
 
