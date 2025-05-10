@@ -391,10 +391,6 @@ Ensure all columns are properly filled with relevant information."""
     if response.status_code == 200:
         raw_prescription = response.json()["prescription"]
         
-        # Display the raw prescription directly on the page
-        st.subheader("Raw Prescription Text (Debug)")
-        st.code(raw_prescription)
-        
         return raw_prescription
     else:
         st.error("Failed to generate prescription")
@@ -1810,9 +1806,6 @@ def display_main_interface():
         
         # Check if there's a raw prescription in the session state that we need to confirm
         if "temp_raw_prescription" in st.session_state:
-            st.subheader("Raw Prescription Text (Debug)")
-            st.code(st.session_state.temp_raw_prescription)
-            
             if st.button("Continue with this Prescription"):
                 st.session_state.prescription = st.session_state.temp_raw_prescription
                 # Clear the temporary prescription
