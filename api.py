@@ -306,7 +306,18 @@ def generate_prescription(request: PrescriptionRequest):
         # Use LangChain with OpenAI and search tools
         medication_prompt = PromptTemplate(
             input_variables=["diagnosis"],
-            template="Generate a detailed prescription with appropriate medications available in the Pakistani market for this diagnosis: {diagnosis}"
+            template="""Generate a detailed prescription with appropriate medications available in the Pakistani market for this diagnosis: {diagnosis}
+            
+Include for each medication:
+1. Medication name
+2. Dosage information
+3. Frequency of administration
+4. Duration of treatment
+5. Common side effects
+6. Potential interactions with other medications
+7. Pregnancy safety information (FDA category and recommendations)
+
+Format your response as a structured and clear table with all the above information."""
         )
         
         # First try with direct LLM for faster response

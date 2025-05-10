@@ -367,8 +367,21 @@ Age: {patient_data['age']}
 Gender: {patient_data['gender']}
 
 Generate a detailed prescription with appropriate medications available in the Pakistani market.
-Include dosage, frequency, and duration for each medication. Format your response as a table of medications,
- with Name, dosage, Frequency, Duration and side-effects. Make sure all the columns are there and there are no extra columns."""
+Include dosage, frequency, and duration for each medication. For each medication, also include:
+1. Potential interactions with other common medications
+2. Pregnancy safety information (category and recommendations)
+3. Common side effects
+
+Format your response as a structured table with the following columns:
+- Medication Name
+- Dosage
+- Frequency
+- Duration
+- Side Effects
+- Medication Interactions
+- Pregnancy Safety
+
+Ensure all columns are properly filled with relevant information."""
 
     response = requests.post(
         f"{BASE_URL}/generate-prescription",
@@ -706,14 +719,16 @@ def create_prescription_pdf(patient_data, diagnosis, prescription, tests=None):
         # Create HTML table for medications
         story.append(Spacer(1, 12))
         story.append(Paragraph("<b>Medications:</b>", styles['Heading3']))
-        table_data = [["Medication", "Dosage", "Frequency", "Duration", "Side Effects"]]
+        table_data = [["Medication", "Dosage", "Frequency", "Duration", "Side Effects", "Interactions", "Pregnancy Safety"]]
         for med in medications:
             table_data.append([
                 med.get('medication', ''),
                 med.get('dosage', ''),
                 med.get('frequency', ''),
                 med.get('duration', ''),
-                med.get('side_effects', '')
+                med.get('side_effects', ''),
+                med.get('interactions', ''),
+                med.get('pregnancy_safety', '')
             ])
         from reportlab.platypus import Table, TableStyle
         from reportlab.lib import colors
@@ -1059,6 +1074,8 @@ def create_prescription_html(patient_data, diagnosis, prescription, tests=None):
         html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Frequency</th>")
         html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Duration</th>")
         html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Side Effects</th>")
+        html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Interactions</th>")
+        html.append("                        <th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Pregnancy Safety</th>")
         html.append("                    </tr>")
         html.append("                </thead>")
         html.append("                <tbody>")
@@ -1071,6 +1088,8 @@ def create_prescription_html(patient_data, diagnosis, prescription, tests=None):
             html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('frequency', '')}</td>")
             html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('duration', '')}</td>")
             html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('side_effects', '')}</td>")
+            html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('interactions', '')}</td>")
+            html.append(f"                        <td style='border: 1px solid #ddd; padding: 8px;'>{med.get('pregnancy_safety', '')}</td>")
             html.append("                    </tr>")
             
             # If translation needed, add a row for translation
@@ -1080,12 +1099,14 @@ def create_prescription_html(patient_data, diagnosis, prescription, tests=None):
                 if med.get('frequency'): med_str += f" - {med.get('frequency')}"
                 if med.get('duration'): med_str += f" - {med.get('duration')}"
                 if med.get('side_effects'): med_str += f" (Side effects: {med.get('side_effects')})"
+                if med.get('interactions'): med_str += f" (Interactions: {med.get('interactions')})"
+                if med.get('pregnancy_safety'): med_str += f" (Pregnancy safety: {med.get('pregnancy_safety')})"
                 
                 med_translation = translate_text(med_str, patient_language)
                 if med_translation:
                     direction_class = "rtl" if is_rtl else "ltr"
                     html.append(f"                    <tr class='{direction_class}' style='background-color: #f9f9f9;'>")
-                    html.append(f"                        <td colspan='5' style='border: 1px solid #ddd; padding: 8px; font-style: italic; color: #555;'>{med_translation}</td>")
+                    html.append(f"                        <td colspan='7' style='border: 1px solid #ddd; padding: 8px; font-style: italic; color: #555;'>{med_translation}</td>")
                     html.append("                    </tr>")
         
         html.append("                </tbody>")
@@ -1295,34 +1316,59 @@ def parse_medication_details(med_line):
         "dosage": "",
         "frequency": "",
         "duration": "",
-        "side_effects": ""
+        "side_effects": "",
+        "interactions": "",
+        "pregnancy_safety": ""
     }
     
-    # First check if there are side effects anywhere in the line
-    if "Side effects:" in med_line:
-        # Split the line at "Side effects:"
-        main_part, side_effects_part = med_line.split("Side effects:", 1)
-        # Save side effects
-        med["side_effects"] = side_effects_part.strip("() ").strip()
-        # Continue parsing with the cleaned part
-        med_line = main_part.strip()
+    # Check for specific labeled sections in the medication line
+    labeled_fields = {
+        "Side effects:": "side_effects",
+        "Side Effects:": "side_effects",
+        "Interactions:": "interactions",
+        "Medication Interactions:": "interactions",
+        "Drug Interactions:": "interactions",
+        "Pregnancy Safety:": "pregnancy_safety",
+        "Pregnancy:": "pregnancy_safety"
+    }
     
-    # Check for opening parenthesis anywhere in the remaining text
-    # This catches cases where "Side effects:" isn't explicitly mentioned
-    paren_index = med_line.find("(")
+    # Extract labeled content from the medication line
+    remaining_line = med_line
+    for label, field in labeled_fields.items():
+        if label in remaining_line:
+            parts = remaining_line.split(label, 1)
+            remaining_line = parts[0].strip()
+            
+            # If there's another label in the extracted content, only take what's before it
+            content = parts[1].strip()
+            next_label_pos = float('inf')
+            for next_label in labeled_fields.keys():
+                if next_label in content:
+                    pos = content.find(next_label)
+                    if pos < next_label_pos:
+                        next_label_pos = pos
+            
+            if next_label_pos < float('inf'):
+                med[field] = content[:next_label_pos].strip()
+                remaining_line += " " + content[next_label_pos:].strip()
+            else:
+                med[field] = content
+    
+    # Check for opening parenthesis anywhere in the remaining text for unlabeled content
+    paren_index = remaining_line.find("(")
     if paren_index > 0:
         # There's an opening parenthesis - this might be side effects
         # Only process if there's a closing parenthesis too
-        if ")" in med_line[paren_index:]:
-            close_paren = med_line.find(")", paren_index)
+        if ")" in remaining_line[paren_index:]:
+            close_paren = remaining_line.find(")", paren_index)
             # Extract content inside parentheses if not already captured as side effects
             if not med["side_effects"]:
-                med["side_effects"] = med_line[paren_index+1:close_paren].strip()
+                med["side_effects"] = remaining_line[paren_index+1:close_paren].strip()
             # Remove the parenthetical phrase
-            med_line = med_line[:paren_index].strip() + " " + med_line[close_paren+1:].strip()
+            remaining_line = remaining_line[:paren_index].strip() + " " + remaining_line[close_paren+1:].strip()
     
-    # Parse the remaining parts
-    parts = med_line.split(" - ")
+    # Parse the remaining parts for basic medication information
+    parts = remaining_line.split(" - ")
     
     # Assign parts to appropriate fields
     if len(parts) > 0:
@@ -1848,7 +1894,7 @@ Showing the following symptoms:
             header = None
             for i, line in enumerate(lines):
                 line = line.strip()
-                if line.startswith("|") and i < len(lines)-1 and "-|-" in lines[i+1]:
+                if line.startswith("|") and i < len(lines)-1 and "-|-" in line:
                     # This is the header row
                     header = [col.strip() for col in line.strip("|").split("|")]
                     break
