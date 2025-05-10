@@ -1925,62 +1925,91 @@ def display_main_interface():
         
         # Check if prescription contains a markdown/ascii table
         if "|" in prescription and "-|-" in prescription:
-            # Try to parse markdown table
+            # This is a markdown table format - parse it directly
             lines = prescription.strip().split('\n')
-            header = None
+            table_start = False
+            header_line = -1
+            
+            # Find the header line
             for i, line in enumerate(lines):
-                line = line.strip()
-                if line.startswith("|") and i < len(lines)-1 and "-|-" in line:
-                    # This is the header row
-                    header = [col.strip() for col in line.strip("|").split("|")]
+                if line.strip().startswith("|") and "-|-" in lines[i+1] if i+1 < len(lines) else False:
+                    header_line = i
                     break
             
-            # If we found a header, extract data rows
-            if header:
-                for i, line in enumerate(lines):
-                    if i > 0 and line.startswith("|") and not "-|-" in line:
-                        columns = [col.strip() for col in line.strip("|").split("|")]
-                        if len(columns) >= 5:  # At least medication, dosage, frequency, duration, side-effects
-                            medications.append({
-                                "medication": columns[0],
-                                "dosage": columns[1],
-                                "frequency": columns[2],
-                                "duration": columns[3],
-                                "side_effects": columns[4] if len(columns) > 4 else ""
-                            })
-        
-        # If table parsing failed, try normal text parsing
-        if not medications:
+            if header_line >= 0:
+                # Get the header column names
+                header = [col.strip() for col in lines[header_line].strip().split("|")]
+                header = [col for col in header if col]  # Remove empty strings
+                
+                # Map header columns to medication fields
+                field_positions = {
+                    "medication": -1,
+                    "dosage": -1, 
+                    "frequency": -1,
+                    "duration": -1,
+                    "side_effects": -1,
+                    "interactions": -1,
+                    "pregnancy_safety": -1
+                }
+                
+                # Map positions based on header names
+                for i, col in enumerate(header):
+                    col_lower = col.lower()
+                    if "medication" in col_lower or "name" in col_lower:
+                        field_positions["medication"] = i
+                    elif "dosage" in col_lower or "dose" in col_lower:
+                        field_positions["dosage"] = i
+                    elif "frequency" in col_lower:
+                        field_positions["frequency"] = i
+                    elif "duration" in col_lower:
+                        field_positions["duration"] = i
+                    elif "side" in col_lower and "effect" in col_lower:
+                        field_positions["side_effects"] = i
+                    elif "interaction" in col_lower:
+                        field_positions["interactions"] = i
+                    elif "pregnancy" in col_lower:
+                        field_positions["pregnancy_safety"] = i
+                
+                # Process data rows
+                for i in range(header_line + 2, len(lines)):  # Skip header and separator
+                    line = lines[i].strip()
+                    if not line or not line.startswith("|"):
+                        continue
+                        
+                    columns = [col.strip() for col in line.split("|")]
+                    columns = [col for col in columns if col]  # Remove empty strings
+                    
+                    if len(columns) < len(header):
+                        continue  # Skip incomplete rows
+                        
+                    med = {
+                        "medication": "",
+                        "dosage": "",
+                        "frequency": "",
+                        "duration": "",
+                        "side_effects": "",
+                        "interactions": "",
+                        "pregnancy_safety": ""
+                    }
+                    
+                    # Fill in the medication fields based on mapped positions
+                    for field, pos in field_positions.items():
+                        if pos >= 0 and pos < len(columns):
+                            med[field] = columns[pos]
+                    
+                    if med["medication"].strip():  # Only add non-empty medications
+                        medications.append(med)
+        else:
+            # Try parsing it as bullet points or other format
             lines = re.split(r'\n+', prescription)
             for line in lines:
                 line = line.strip()
                 if not line:
                     continue
-                    
-                # Remove bullet points, numbers, etc.
-                cleaned_line = re.sub(r'^[\s•\-\*\d\.]+', '', line).strip()
                 
-                # Skip very short lines or headers
-                if len(cleaned_line) < 5 or ":" in cleaned_line[:15]:
-                    continue
-                    
-                # Try to extract medication components
-                parts = re.split(r'[-,:]', cleaned_line, 4)
-                
-                if len(parts) >= 1:
-                    med_name = parts[0].strip()
-                    dosage = parts[1].strip() if len(parts) > 1 else ""
-                    frequency = parts[2].strip() if len(parts) > 2 else ""
-                    duration = parts[3].strip() if len(parts) > 3 else ""
-                    side_effects = parts[4].strip() if len(parts) > 4 else ""
-                    
-                    medications.append({
-                        "medication": med_name,
-                        "dosage": dosage,
-                        "frequency": frequency,
-                        "duration": duration,
-                        "side_effects": side_effects
-                    })
+                # Check if this is a medication line (usually starts with bullet, number, etc.)
+                if line.startswith("• ") or re.match(r'^\d+\.', line) or ":" not in line[:15]:
+                    medications.append(parse_medication_details(line))
         
         # If no medications were extracted, add an empty row
         if not medications:
@@ -1989,7 +2018,9 @@ def display_main_interface():
                 "dosage": "",
                 "frequency": "",
                 "duration": "",
-                "side_effects": ""
+                "side_effects": "",
+                "interactions": "",
+                "pregnancy_safety": ""
             })
         
         # Create session state for medications if it doesn't exist
