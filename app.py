@@ -389,7 +389,13 @@ Ensure all columns are properly filled with relevant information."""
     )
     
     if response.status_code == 200:
-        return response.json()["prescription"]
+        raw_prescription = response.json()["prescription"]
+        
+        # Debug: Let's look at the raw prescription text
+        with st.expander("Debug: Raw Prescription Text"):
+            st.code(raw_prescription)
+        
+        return raw_prescription
     else:
         st.error("Failed to generate prescription")
         return None
