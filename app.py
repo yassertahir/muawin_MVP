@@ -1768,6 +1768,18 @@ def display_main_interface():
             # If no history section, display the diagnosis as before
             st.write(diagnosis_text)
         
+        # Check if there's a raw prescription in the session state that we need to confirm
+        if "temp_raw_prescription" in st.session_state:
+            st.subheader("Raw Prescription Text (Debug)")
+            st.code(st.session_state.temp_raw_prescription)
+            
+            if st.button("Continue with this Prescription"):
+                st.session_state.prescription = st.session_state.temp_raw_prescription
+                # Clear the temporary prescription
+                del st.session_state.temp_raw_prescription
+                st.experimental_rerun()
+            return
+        
         # Extract possible diagnoses from the text
         import re
         possible_diagnoses = []
@@ -1821,16 +1833,14 @@ def display_main_interface():
                 if not final_diagnosis.strip():
                     final_diagnosis = diagnosis_text
                     
-                # Update the diagnosis and move to prescription
+                # Update the diagnosis
                 st.session_state.diagnosis = final_diagnosis
-                prescription = generate_prescription(final_diagnosis, patient_data)
                 
-                # Add debug output for raw prescription text
-                if prescription:
-                    with st.expander("Debug: Raw Prescription Text", expanded=True):
-                        st.code(prescription)
-                    
-                    st.session_state.prescription = prescription
+                # Generate prescription but store it in a temporary state variable
+                raw_prescription = generate_prescription(final_diagnosis, patient_data)
+                if raw_prescription:
+                    # Store in temporary session state for confirmation
+                    st.session_state.temp_raw_prescription = raw_prescription
                     st.experimental_rerun()
         else:
             # If no diagnoses could be extracted, just provide buttons for the next steps
@@ -1838,14 +1848,11 @@ def display_main_interface():
             
             with col1:
                 if st.button("Accept Diagnosis"):
-                    prescription = generate_prescription(st.session_state.diagnosis, patient_data)
-                    
-                    # Add debug output for raw prescription text
-                    if prescription:
-                        with st.expander("Debug: Raw Prescription Text", expanded=True):
-                            st.code(prescription)
-                        
-                        st.session_state.prescription = prescription
+                    # Generate prescription but store it in a temporary state variable
+                    raw_prescription = generate_prescription(st.session_state.diagnosis, patient_data)
+                    if raw_prescription:
+                        # Store in temporary session state for confirmation
+                        st.session_state.temp_raw_prescription = raw_prescription
                         st.experimental_rerun()
     
     elif st.session_state.prescription and not st.session_state.final_prescription:
