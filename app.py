@@ -1964,7 +1964,7 @@ Showing the following symptoms:
         st.write("### Edit Prescription")
         
         # Create column headers for the table
-        col1, col2, col3, col4, col5, col6 = st.columns([3, 2, 2, 2, 3, 1])
+        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 2, 2, 2, 2, 2, 2, 1])
         with col1:
             st.write("**Medication**")
         with col2:
@@ -1976,11 +1976,15 @@ Showing the following symptoms:
         with col5:
             st.write("**Side Effects**")
         with col6:
+            st.write("**Interactions**")
+        with col7:
+            st.write("**Pregnancy Safety**")
+        with col8:
             st.write("**Action**")
         
         # Display each medication as a row in the table
         for i, med in enumerate(st.session_state.medications):
-            col1, col2, col3, col4, col5, col6 = st.columns([3, 2, 2, 2, 3, 1])
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 2, 2, 2, 2, 2, 2, 1])
             
             with col1:
                 st.session_state.medications[i]["medication"] = st.text_input(
@@ -2023,6 +2027,22 @@ Showing the following symptoms:
                 )
             
             with col6:
+                st.session_state.medications[i]["interactions"] = st.text_input(
+                    "Interactions", 
+                    value=med.get("interactions", ""), 
+                    key=f"inter_{i}", 
+                    label_visibility="collapsed"
+                )
+            
+            with col7:
+                st.session_state.medications[i]["pregnancy_safety"] = st.text_input(
+                    "Pregnancy Safety", 
+                    value=med.get("pregnancy_safety", ""), 
+                    key=f"preg_{i}", 
+                    label_visibility="collapsed"
+                )
+            
+            with col8:
                 if st.button("❌", key=f"del_{i}"):
                     st.session_state.medications.pop(i)
                     st.experimental_rerun()
@@ -2034,7 +2054,9 @@ Showing the following symptoms:
                 "dosage": "",
                 "frequency": "",
                 "duration": "",
-                "side_effects": ""
+                "side_effects": "",
+                "interactions": "",
+                "pregnancy_safety": ""
             })
             st.experimental_rerun()
         
@@ -2208,8 +2230,17 @@ Showing the following symptoms:
                         final_prescription += f" - {med['frequency']}"
                     if med["duration"].strip():
                         final_prescription += f" - {med['duration']}"
+                    
+                    # Add the side effects, interactions and pregnancy safety in a clear format
                     if med.get("side_effects", "").strip():
-                        final_prescription += f" (Side effects: {med['side_effects']})"
+                        final_prescription += f" Side effects: {med['side_effects']}"
+                    
+                    if med.get("interactions", "").strip():
+                        final_prescription += f" Interactions: {med['interactions']}"
+                    
+                    if med.get("pregnancy_safety", "").strip():
+                        final_prescription += f" Pregnancy Safety: {med['pregnancy_safety']}"
+                    
                     final_prescription += "\n"
             
             if additional_instructions:
@@ -2273,11 +2304,13 @@ Showing the following symptoms:
                 "dosage": "Dosage",
                 "frequency": "Frequency", 
                 "duration": "Duration",
-                "side_effects": "Side Effects"
+                "side_effects": "Side Effects",
+                "interactions": "Interactions",
+                "pregnancy_safety": "Pregnancy Safety"
             }
             
             # Only include columns that exist in the dataframe
-            display_columns = [col for col in ["medication", "dosage", "frequency", "duration", "side_effects"] 
+            display_columns = [col for col in ["medication", "dosage", "frequency", "duration", "side_effects", "interactions", "pregnancy_safety"] 
                             if col in meds_df.columns]
             
             # Rename columns and display
