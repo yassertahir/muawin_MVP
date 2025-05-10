@@ -1311,11 +1311,7 @@ def create_modal_buttons(pdf_path, html_path, patient_name):
     """)
 
 def parse_medication_details(med_line):
-    """Parse medication details and properly separate side effects, interactions, and pregnancy safety"""
-    # Remove bullet point if present
-    if med_line.startswith("• "):
-        med_line = med_line[2:].strip()
-    
+    """Parse medication details from either bullet point format or markdown table row"""
     # Initialize medication parts
     med = {
         "medication": "",
@@ -1326,6 +1322,38 @@ def parse_medication_details(med_line):
         "interactions": "",
         "pregnancy_safety": ""
     }
+    
+    # Check if this is a markdown table row (starts with |)
+    if med_line.startswith("|"):
+        # This is a markdown table row, parse it accordingly
+        columns = [col.strip() for col in med_line.split("|")]
+        # Remove empty entries (from the beginning and end of the split)
+        columns = [col for col in columns if col]
+        
+        # Map columns to medication fields based on position
+        # Standard column order: Name, Dosage, Frequency, Duration, Side Effects, Interactions, Pregnancy
+        if len(columns) >= 1:
+            med["medication"] = columns[0]
+        if len(columns) >= 2:
+            med["dosage"] = columns[1]
+        if len(columns) >= 3:
+            med["frequency"] = columns[2]
+        if len(columns) >= 4:
+            med["duration"] = columns[3]
+        if len(columns) >= 5:
+            med["side_effects"] = columns[4]
+        if len(columns) >= 6:
+            med["interactions"] = columns[5]
+        if len(columns) >= 7:
+            med["pregnancy_safety"] = columns[6]
+        
+        print(f"Parsed table row: {med}")
+        return med
+    
+    # If not a table row, proceed with the original parsing logic
+    # Remove bullet point if present
+    if med_line.startswith("• "):
+        med_line = med_line[2:].strip()
     
     # First, try to find labeled sections for specialized fields (more reliable)
     labeled_fields = {
@@ -1402,9 +1430,7 @@ def parse_medication_details(med_line):
                 if med[field].startswith(label):
                     med[field] = med[field][len(label):].strip()
     
-    # Debug the parsing results
-    print(f"PARSED: {med_line} -> {med}")
-    
+    print(f"Parsed text line: {med_line} -> {med}")
     return med
 
 def update_patient_conditions(patient_id, pre_conditions):
