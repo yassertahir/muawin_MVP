@@ -5,7 +5,7 @@ def migrate_referrals_table():
     """
     Add referrals table to the existing database if it doesn't exist.
     """
-    conn = sqlite3.connect("muawin.db")
+    conn = sqlite3.connect("docassist.db")
     cursor = conn.cursor()
     
     # Check if referrals table already exists
