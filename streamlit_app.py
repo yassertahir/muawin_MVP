@@ -7,7 +7,7 @@ import socket
 import time
 
 # Set page config as the first Streamlit command
-st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
+st.set_page_config(page_title="DocAssist - AI Assistant for Doctors", layout="wide")
 
 # Apply nest_asyncio to enable running asyncio event loops inside Jupyter/IPython
 nest_asyncio.apply()

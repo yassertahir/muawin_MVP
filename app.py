@@ -23,7 +23,7 @@ import subprocess  # For running wkhtmltopdf
 
 # Only configure the page if not already configured
 # if not hasattr(st, '_is_page_config_set'):
-#     st.set_page_config(page_title="Muawin - AI Assistant for Doctors", layout="wide")
+#     st.set_page_config(page_title="DocAssist - AI Assistant for Doctors", layout="wide")
 #     st._is_page_config_set = True
 if 'BASE_URL' in st.session_state:
     BASE_URL = st.session_state['BASE_URL']
@@ -119,7 +119,7 @@ def start_new_conversation():
 def get_patient_list():
     try:
         # Query patients directly from the database
-        conn = sqlite3.connect("muawin.db")
+        conn = sqlite3.connect("docassist.db")
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM patients")
         patients = [row[0] for row in cursor.fetchall()]
@@ -448,7 +448,7 @@ def save_consultation(doctor_id, patient_id, symptoms, diagnosis, prescription, 
                     updated_data["prescription_pdf"] = pdf_dest_path
                     
                     # Update via a separate API endpoint or directly in the database
-                    conn = sqlite3.connect("muawin.db")
+                    conn = sqlite3.connect("docassist.db")
                     cursor = conn.cursor()
                     
                     try:
@@ -1585,11 +1585,12 @@ def display_login():
     col1, col2 = st.columns([1, 3])
     with col1:
         try:
-            st.image("Muawin_logo.png", width=100)
+            # Removed Muawin logo reference
+            st.write("DocAssist")
         except:
-            st.write("Muawin")
+            st.write("DocAssist")
     with col2:
-        st.title("Muawin - AI Assistant for Doctors")
+        st.title("DocAssist - AI Assistant for Doctors")
     
     with st.form("login_form"):
         username = st.text_input("Username", value="admin")
@@ -1608,11 +1609,12 @@ def display_main_interface():
     col1, col2 = st.columns([1, 3])
     with col1:
         try:
-            st.image("Muawin_logo.png", width=100)
+            # Removed Muawin logo reference
+            st.write("DocAssist")
         except:
-            st.write("Muawin")
+            st.write("DocAssist")
     with col2:
-        st.title("Muawin - AI Assistant for Doctors")
+        st.title("DocAssist - AI Assistant for Doctors")
     
     # Sidebar for session controls
     with st.sidebar:

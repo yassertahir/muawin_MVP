@@ -1,14 +1,15 @@
 import sqlite3
 import os
+import sys
 
 def add_tests_column():
     """Add tests column to consultations table if it doesn't exist"""
-    if not os.path.exists("muawin.db"):
-        print("Database does not exist. Run db_init.py first.")
-        return
+    if not os.path.exists("docassist.db"):
+        print("Database file not found. Please run db_init.py first.")
+        sys.exit(1)
         
     # Connect to database
-    conn = sqlite3.connect("muawin.db")
+    conn = sqlite3.connect("docassist.db")
     cursor = conn.cursor()
     
     # Check if column exists

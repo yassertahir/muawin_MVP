@@ -8,7 +8,7 @@ def update_patients_csv():
     """
     try:
         # Connect to database
-        conn = sqlite3.connect("muawin.db")
+        conn = sqlite3.connect("docassist.db")
         
         # Query all patient IDs from the database
         df = pd.read_sql("SELECT id as patientId FROM patients", conn)

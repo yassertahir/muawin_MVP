@@ -38,7 +38,7 @@ app.add_middleware(
 )
 
 # Database path
-DATABASE_PATH = "muawin.db"
+DATABASE_PATH = "docassist.db"
 
 # Initialize LangChain components
 def get_llm():

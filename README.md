@@ -1,6 +1,6 @@
-# Muawin AI - Doctor's Assistant MVP
+# DocAssist - AI Assistant for Doctors
 
-This is an MVP for Muawin, an AI assistant for doctors in developing countries. The application allows doctors to input patient data and symptoms, receive AI-generated diagnoses, and create digital prescriptions.
+This is an MVP for DocAssist, an AI assistant for doctors in developing countries. The application allows doctors to input patient data and symptoms, receive AI-generated diagnoses, and create digital prescriptions.
 
 ## Features
 
@@ -16,8 +16,8 @@ This is an MVP for Muawin, an AI assistant for doctors in developing countries. 
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/muawin-mvp.git
-   cd muawin-mvp
+   git clone https://github.com/yourusername/docassist-mvp.git
+   cd docassist-mvp
    ```
 
 2. Create a virtual environment and activate it:
@@ -64,7 +64,7 @@ This is an MVP for Muawin, an AI assistant for doctors in developing countries. 
 - `app.py` - Streamlit frontend application
 - `api.py` - FastAPI backend server
 - `db_init.py` - Database initialization script
-- `muawin.db` - SQLite database (created after initialization)
+- `docassist.db` - SQLite database (created after initialization)
 - `patients.csv` - Sample patient IDs for dropdown
 - `requirements.txt` - Project dependencies
 - `.env` - Environment variables (API keys)

@@ -3,7 +3,7 @@ import pandas as pd
 
 def update_database():
     # Connect to existing DB
-    conn = sqlite3.connect("muawin.db")
+    conn = sqlite3.connect("docassist.db")
     cursor = conn.cursor()
     
     # Check if language column exists

@@ -1,14 +1,15 @@
 import sqlite3
 import os
+import sys
 
 def migrate_database():
     """Add new columns to consultations table if they don't exist"""
-    if not os.path.exists("muawin.db"):
-        print("Database does not exist. Run db_init.py first.")
-        return
+    if not os.path.exists("docassist.db"):
+        print("Database file not found. Please run db_init.py first.")
+        sys.exit(1)
         
     # Connect to database
-    conn = sqlite3.connect("muawin.db")
+    conn = sqlite3.connect("docassist.db")
     cursor = conn.cursor()
     
     # Check if columns exist
@@ -37,12 +38,12 @@ def migrate_database():
 
 def migrate_pre_conditions():
     """Move pre-existing conditions from consultations to patients table"""
-    if not os.path.exists("muawin.db"):
-        print("Database does not exist. Run db_init.py first.")
-        return
+    if not os.path.exists("docassist.db"):
+        print("Database file not found. Please run db_init.py first.")
+        sys.exit(1)
         
     # Connect to database
-    conn = sqlite3.connect("muawin.db")
+    conn = sqlite3.connect("docassist.db")
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
@@ -81,12 +82,12 @@ def remove_pre_conditions_from_consultations():
     After migrating pre-existing conditions to patient table,
     remove the column from consultations table
     """
-    if not os.path.exists("muawin.db"):
-        print("Database does not exist. Run db_init.py first.")
-        return
+    if not os.path.exists("docassist.db"):
+        print("Database file not found. Please run db_init.py first.")
+        sys.exit(1)
         
     # Connect to database
-    conn = sqlite3.connect("muawin.db")
+    conn = sqlite3.connect("docassist.db")
     cursor = conn.cursor()
     
     try:
@@ -137,6 +138,26 @@ def remove_pre_conditions_from_consultations():
         print(f"Error removing pre_conditions from consultations: {str(e)}")
     finally:
         conn.close()
+
+# Function to add vital_signs column to consultations table
+def add_vital_signs_column():
+    """Add vital_signs column to consultations table if it doesn't exist"""
+    if not os.path.exists("docassist.db"):
+        print("Database file not found. Please run db_init.py first.")
+        sys.exit(1)
+        
+    # Connect to database
+    conn = sqlite3.connect("docassist.db")
+
+# Function to add language column to patients table
+def add_language_column():
+    """Add language column to patients table if it doesn't exist"""
+    if not os.path.exists("docassist.db"):
+        print("Database file not found. Please run db_init.py first.")
+        sys.exit(1)
+        
+    # Connect to database
+    conn = sqlite3.connect("docassist.db")
 
 if __name__ == "__main__":
     migrate_database()
